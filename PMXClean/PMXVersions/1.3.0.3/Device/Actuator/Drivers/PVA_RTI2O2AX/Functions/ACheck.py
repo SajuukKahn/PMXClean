@@ -1,0 +1,77 @@
+#DisplayName = A Check
+#Description = Check if the actuator is in the "Position A" state
+#Icon = AlphaABoxMaterialIcon
+#SubIcon = CheckMaterialIcon
+
+def __inputs__():
+    #Description = The maximum amount of time to wait for the actuator to reach the desired state
+    Inputs.Timeout = new.int(1000, 0, 1000000, 10, 100, "ms")
+
+def __run__():
+    if (Settings.PositionAInput is None):
+        __throwexception__(Exceptions.InputMissing, "Position A Input")
+        return
+    if (Settings.PositionBInput is None):
+        __throwexception__(Exceptions.InputMissing, "Position B Input")
+        return
+    if (Settings.PositionAOutput is None):
+        __throwexception__(Exceptions.OutputMissing, "Position A Output")
+        return
+    if (Settings.PositionBOutput is None):
+        __throwexception__(Exceptions.OutputMissing, "Position B Output")
+        return
+
+    ata = isata()
+    atb = isatb()
+    done = (ata and not atb) or not isactuateda()
+
+    timeout = PVA.System.GetCurrentTime().Value + Inputs.Timeout.Value
+    while not done and (PVA.System.GetCurrentTime().Value < timeout):
+        ata = isata()
+        atb = isatb()
+        done = (ata and not atb) or not isactuateda()
+        PVA.System.Wait(10)
+
+    ata = isata()
+    atb = isatb()
+    done = (ata and not atb) or not isactuateda()
+    Outputs.AState.Value = ata and not atb
+    if not done:
+        if not ata:
+            __throwexception__(Exceptions.Timeout, "Position A Input")
+        else:
+            __throwexception__(Exceptions.Timeout, "Position B Input")
+        return
+
+def __virtual__():
+    PVA.System.Wait(Inputs.Timeout.Value / 10)
+
+def __outputs__():
+    #DisplayName = A State
+    #Description = A value indicating whether the actuator is in the "Position A" state
+    Outputs.AState = new.bool(False, True)
+
+def __exceptions__():
+    Exceptions.Timeout = new.exception("#IO.Exceptions.TimeoutTitle", "#Actuator.Exceptions.NamedRotateATimeout", new.enum("Severity", "Error").Value, None)
+    Exceptions.InputMissing = new.exception("#IO.Exceptions.InputMissingTitle", "#IO.Exceptions.NamedIOMissing", new.enum("Severity", "Error").Value, None)
+    Exceptions.OutputMissing = new.exception("#IO.Exceptions.OutputMissingTitle", "#IO.Exceptions.NamedIOMissing", new.enum("Severity", "Error").Value, None)
+
+def isata():
+    return Settings.PositionAInput.Value
+
+def isatb():
+    return Settings.PositionBInput.Value
+
+def isactuateda():
+    return (Settings.PositionAOutput.WriteValue == Settings.ActuatedAState.Value) and (Settings.PositionBOutput.WriteValue != Settings.ActuatedBState.Value)
+
+def __throwexception__(exception, name = ""):
+    __exceptionhandling__()
+    exception.ExceptionData.MessageParams = tuple([GetDisplayName(), name])
+    PVA.Exceptions.ThrowException(exception)
+
+def __exceptionhandling__():
+    pass
+
+def __exceptionrecovery__():
+    pass

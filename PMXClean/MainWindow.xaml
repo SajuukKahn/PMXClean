@@ -1,375 +1,878 @@
-﻿ <Window x:Class="PMXClean.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:PMXClean"
-        mc:Ignorable="d"
-        Title="PMX Utility Tool" Height="600" Width="900"
-        WindowStartupLocation="CenterScreen">
+﻿
+<Window
+    x:Class="PMXClean.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="clr-namespace:PMXClean"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:PMXClean.ViewModels"
+    Title="PMX Utility Tool"
+    Width="1000"
+    Height="700"
+    Background="{DynamicResource MaterialDesign.Brush.Background}"
+    Style="{StaticResource MaterialDesignWindow}"
+    WindowStartupLocation="CenterScreen"
+    mc:Ignorable="d">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header with Path Selection -->
-        <Border Grid.Row="0" Background="#FF2D2D30" Padding="10">
+        <!--  Header with Path Selection  -->
+        <materialDesign:ColorZone
+            Grid.Row="0"
+            Padding="16"
+            Mode="PrimaryDark">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Target Path:" 
-                           Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="TargetPathComboBox" 
-                         VerticalAlignment="Center"
-                         Padding="5" Margin="0,0,10,0"
-                         SelectionChanged="TargetPathComboBox_SelectionChanged"
-                         Height="32"/>
-                <Button Grid.Row="0" Grid.Column="2" Content="📁 Open Folder" 
-                        Click="OpenTargetFolder_Click" Padding="10,5"
-                        Width="110" Margin="0,0,5,0"
-                        ToolTip="Open target folder in File Explorer"/>
-                <Button Grid.Row="0" Grid.Column="3" Content="Refresh Paths" 
-                        Click="RefreshPaths_Click" Padding="10,5"
-                        Width="110"/>
-
-                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3"
-                           x:Name="FileVersionTextBlock"
-                           Foreground="#FF90CAF9" 
-                           FontSize="11"
-                           FontStyle="Italic"
-                           Margin="0,5,0,0"
-                           VerticalAlignment="Center"
-                           Text=""/>
-            </Grid>
-        </Border>
-
-        <!-- Main Content - Tabs -->
-        <TabControl Grid.Row="1" Margin="10">
-            <!-- Compare Python Tab -->
-            <TabItem Header="Compare Python">
-                <Grid Margin="20">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0" Text="Compare Python Files" 
-                               FontSize="18" FontWeight="Bold" Margin="0,0,0,20"/>
-
-                    <StackPanel Grid.Row="1">
-                        <Button Content="Compare Installed" 
-                                Click="CompareInstalled_Click" 
-                                Padding="10" Height="40"/>
-                        <Button Content="Pull Fresh Master" 
-                                Click="PullFreshMaster_Click" 
-                                Padding="10" Height="40" Margin="0,10,0,0"/>
+                <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Margin="0,0,16,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
+                    Text="Target Path:" />
+                <ComboBox
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Margin="0,0,16,0"
+                    materialDesign:HintAssist.Hint="Select installation"
+                    DisplayMemberPath="DisplayName"
+                    ItemsSource="{Binding Installations}"
+                    SelectedItem="{Binding SelectedInstallation}"
+                    Style="{StaticResource MaterialDesignOutlinedComboBox}" />
+                <Button
+                    Grid.Row="0"
+                    Grid.Column="2"
+                    Margin="0,0,8,0"
+                    VerticalAlignment="Top"
+                    Command="{Binding OpenTargetFolderCommand}"
+                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                    ToolTip="Open target folder in File Explorer">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Kind="FolderOpen" />
+                        <TextBlock VerticalAlignment="Center" Text="Open Folder" />
                     </StackPanel>
-                </Grid>
+                </Button>
+                <Button
+                    Grid.Row="0"
+                    Grid.Column="3"
+                    VerticalAlignment="Top"
+                    Command="{Binding RefreshPathsCommand}"
+                    Style="{StaticResource MaterialDesignOutlinedButton}">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Kind="Refresh" />
+                        <TextBlock VerticalAlignment="Center" Text="Refresh" />
+                    </StackPanel>
+                </Button>
+
+                <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="2"
+                    Grid.ColumnSpan="2"
+                    Margin="0,0,0,-8"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Opacity="0.7"
+                    Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                    Text="{Binding FileVersionText}" />
+            </Grid>
+        </materialDesign:ColorZone>
+
+        <!--  Main Content - Tabs  -->
+        <TabControl
+            Grid.Row="1"
+            Margin="0,0,0,0"
+            Style="{StaticResource MaterialDesignFilledTabControl}">
+
+            <!--  Compare Python Tab  -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Kind="CodeBraces" />
+                        <TextBlock Text="Compare Python" />
+                    </StackPanel>
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16">
+                        <!--  Version Selection Card  -->
+                        <materialDesign:Card Margin="0,0,0,24" Padding="16">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <ComboBox
+                                    Grid.Row="0"
+                                    Grid.Column="0"
+                                    Margin="0,0,16,0"
+                                    materialDesign:HintAssist.Hint="Source Version"
+                                    materialDesign:HintAssist.IsFloating="True"
+                                    ItemsSource="{Binding AvailableVersions}"
+                                    SelectedItem="{Binding SelectedVersion}"
+                                    Style="{StaticResource MaterialDesignOutlinedComboBox}" />
+                                <Button
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Command="{Binding AutoMatchVersionCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                                    ToolTip="Select version matching the target installation">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="AutoFix" />
+                                        <TextBlock Text="Auto-Match" />
+                                    </StackPanel>
+                                </Button>
+
+                                <TextBlock
+                                    Grid.Row="1"
+                                    Grid.Column="0"
+                                    Grid.ColumnSpan="2"
+                                    Margin="0,12,0,0"
+                                    Opacity="0.7"
+                                    Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                    Text="{Binding VersionInfoText}" />
+                            </Grid>
+                        </materialDesign:Card>
+
+                        <Button
+                            Height="48"
+                            Command="{Binding CompareWithWinMergeCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Kind="Compare" />
+                                <TextBlock VerticalAlignment="Center" Text="Compare with WinMerge" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
-            <!-- Backup Tab -->
-            <!-- Backup & Cleanup Tab -->
-            <TabItem Header="Backup &amp; Cleanup">
-                <Grid Margin="20">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="2"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Backup Column -->
-                    <Grid Grid.Column="0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Text="Backup Manager" 
-                                   FontSize="18" FontWeight="Bold" 
-                                   Foreground="#FF4CAF50"
-                                   Margin="0,0,0,10"/>
-
-                        <!-- Backup Selection and Management -->
-                        <Border Grid.Row="1" BorderBrush="#FF2D2D30" BorderThickness="1" Padding="10" Margin="0,0,0,15">
-                            <StackPanel>
-                                <TextBlock Text="Select Backup Instance:" FontWeight="Bold" Margin="0,0,0,5"/>
-                                <Grid>
-                                    <ComboBox x:Name="BackupComboBox" 
-                                              SelectionChanged="BackupComboBox_SelectionChanged"
-                                              Height="30" Margin="0,0,0,10"/>
-                                    <TextBox x:Name="BackupRenameTextBox" 
-                                             Height="30" Margin="0,0,0,10"
-                                             Padding="5"
-                                             Visibility="Collapsed"
-                                             KeyDown="BackupRenameTextBox_KeyDown"
-                                             LostFocus="BackupRenameTextBox_LostFocus"/>
-                                    <TextBox x:Name="BackupNewNameTextBox" 
-                                             Height="30" Margin="0,0,0,10"
-                                             Padding="5"
-                                             Visibility="Collapsed"
-                                             KeyDown="BackupNewNameTextBox_KeyDown"
-                                             LostFocus="BackupNewNameTextBox_LostFocus"/>
-                                </Grid>
-
+            <!--  Backup & Cleanup Tab  -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Kind="BackupRestore" />
+                        <TextBlock Text="Backup &amp; Cleanup" />
+                    </StackPanel>
+                </TabItem.Header>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <!--  Backup Instance Selection Card  -->
+                            <materialDesign:Card Margin="0,0,0,0" Padding="16">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="5"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="5"/>
-                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
+                                    <Grid>
+                                        <ComboBox
+                                            Margin="0,0,8,0"
+                                            materialDesign:HintAssist.Hint="Backup"
+                                            ItemsSource="{Binding BackupInstances}"
+                                            SelectedItem="{Binding SelectedBackup}">
+                                            <ComboBox.Style>
+                                                <Style BasedOn="{StaticResource MaterialDesignOutlinedComboBox}" TargetType="ComboBox">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBackupRenaming}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsBackupCreating}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ComboBox.Style>
+                                        </ComboBox>
+                                        <TextBox
+                                            Margin="0,0,8,0"
+                                            materialDesign:HintAssist.Hint="Backup Name"
+                                            materialDesign:HintAssist.IsFloating="True"
+                                            Text="{Binding BackupEditName, UpdateSourceTrigger=PropertyChanged}">
+                                            <TextBox.Style>
+                                                <Style BasedOn="{StaticResource MaterialDesignOutlinedTextBox}" TargetType="TextBox">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBackupRenaming}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsBackupCreating}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBox.Style>
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Enter" Command="{Binding ConfirmBackupEditCommand}" />
+                                                <KeyBinding Key="Escape" Command="{Binding CancelBackupEditCommand}" />
+                                            </TextBox.InputBindings>
+                                        </TextBox>
+                                    </Grid>
 
-                                    <Button Grid.Column="0" Content="New..." 
-                                            Click="NewBackupInstance_Click" 
-                                            Padding="5" Height="30"
-                                            Background="#FF4CAF50"/>
-                                    <Button Grid.Column="2" Content="Rename..." 
-                                            Click="RenameBackup_Click" 
-                                            Padding="5" Height="30"/>
-                                    <Button Grid.Column="4" Content="Delete" 
-                                            Click="DeleteBackupInstance_Click" 
-                                            Padding="5" Height="30"
-                                            Background="#FFCC4444"/>
+                                    <UniformGrid Grid.Column="1" Columns="3">
+                                        <Button
+                                            Margin="0,0,4,0"
+                                            Command="{Binding StartNewBackupCommand}"
+                                            Foreground="{DynamicResource MaterialDesign.Brush.Primary}"
+                                            Style="{StaticResource MaterialDesignFlatButton}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon
+                                                    Margin="0,0,4,0"
+                                                    VerticalAlignment="Center"
+                                                    Kind="Plus" />
+                                                <TextBlock Text="New" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                            Margin="4,0"
+                                            Command="{Binding StartRenameBackupCommand}"
+                                            Style="{StaticResource MaterialDesignFlatButton}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon
+                                                    Margin="0,0,4,0"
+                                                    VerticalAlignment="Center"
+                                                    Kind="RenameBox" />
+                                                <TextBlock Text="Rename" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                            Margin="4,0,0,0"
+                                            Command="{Binding DeleteBackupCommand}"
+                                            Foreground="{DynamicResource MaterialDesign.Brush.Secondary}"
+                                            Style="{StaticResource MaterialDesignFlatButton}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon
+                                                    Margin="0,0,4,0"
+                                                    VerticalAlignment="Center"
+                                                    Kind="Delete" />
+                                                <TextBlock Text="Delete" />
+                                            </StackPanel>
+                                        </Button>
+                                    </UniformGrid>
+
+                                    <TextBlock
+                                        Grid.Column="2"
+                                        Margin="8,0,0,0"
+                                        Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                        Text="{Binding BackupInfoText}"
+                                        TextWrapping="Wrap" />
                                 </Grid>
+                            </materialDesign:Card>
 
-                                <TextBlock x:Name="BackupInfoTextBlock" 
-                                           Text="No backup selected" 
-                                           Margin="0,10,0,0" 
-                                           FontStyle="Italic"
-                                           Foreground="Gray"
-                                           TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
+                            <Grid Margin="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
 
-                        <!-- Backup Operations -->
-                        <TextBlock Grid.Row="2" Text="Backup Operations" 
-                                   FontWeight="Bold" Margin="0,0,0,10"/>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="3">
-                            <Button Content="Copy All Files" 
-                                    Click="BackupAll_Click" 
-                                    Padding="10" Height="40"
-                                    Background="#FF4CAF50"
-                                    FontWeight="Bold"/>
-                            <Button Content="Copy JSON" 
-                                    Click="BackupJson_Click" 
-                                    Padding="10" Height="40" Margin="0,10,0,0"/>
-                            <Button Content="Copy Retention" 
-                                    Click="BackupRetention_Click" 
-                                    Padding="10" Height="40" Margin="0,10,0,0"/>
-                            <Button Content="Copy Python" 
-                                    Click="BackupPython_Click" 
-                                    Padding="10" Height="40" Margin="0,10,0,0"/>
-                            <Button Content="Copy DLLs" 
-                                    Click="BackupDlls_Click" 
-                                    Padding="10" Height="40" Margin="0,10,0,0"/>
-                            <Button Content="Copy Page Stubs" 
-                                    Click="BackupStubs_Click" 
-                                    Padding="10" Height="40" Margin="0,10,0,0"/>
-                            <Separator Margin="0,15"/>
-                            <Button Content="Restore to Target" 
-                                    Click="OverwriteTarget_Click" 
-                                    Padding="10" Height="40" 
-                                    Background="#FFCC4444" 
-                                    FontWeight="Bold"
-                                    ToolTip="Restore selected backup to target path"/>
+
+                                <!--  Back up  -->
+                                <Button
+                                    Height="44"
+                                    Margin="8,0,4,8"
+                                    Background="{DynamicResource MaterialDesign.Brush.Primary}"
+                                    Command="{Binding BackupAllFilesCommand}"
+                                    Style="{StaticResource MaterialDesignRaisedButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="ContentCopy" />
+                                        <TextBlock FontWeight="Bold" Text="Back up All Files" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    Grid.Row="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding BackupJsonCommand}"
+                                    Content="Back up JSON"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="2"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding BackupRetentionCommand}"
+                                    Content="Back up Retention"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="3"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding BackupPythonCommand}"
+                                    Content="Back up Python"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="4"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding BackupStubsCommand}"
+                                    Content="Back up Page Stubs"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+
+                                <Button
+                                    Grid.Row="5"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding BackupCameraFilesCommand}"
+                                    Content="Back up Camera Files"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+
+                                <Button
+                                    Grid.Row="6"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding BackupDllsCommand}"
+                                    Content="Back up DLLs"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+
+
+                                <!--  Copy to Destination  -->
+                                <Button
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Height="44"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding RestoreBackupCommand}"
+                                    Style="{StaticResource MaterialDesignFlatSecondaryDarkBgButton}"
+                                    ToolTip="Restore selected backup to target path">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="Restore" />
+                                        <TextBlock FontWeight="Bold" Text="Restore All to Target" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding CopyJsonToDestinationCommand}"
+                                    Content="Copy JSON to Target"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="2"
+                                    Grid.Column="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding CopyRetentionToDestinationCommand}"
+                                    Content="Copy Retention to Target"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="3"
+                                    Grid.Column="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding CopyPythonToDestinationCommand}"
+                                    Content="Copy Python to Target"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="4"
+                                    Grid.Column="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding CopyStubsToDestinationCommand}"
+                                    Content="Copy Stubs to Target"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="5"
+                                    Grid.Column="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding CopyCameraFilesToDestinationCommand}"
+                                    Content="Copy Camera to Target"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                <Button
+                                    Grid.Row="6"
+                                    Grid.Column="1"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding CopyDllsToDestinationCommand}"
+                                    Content="Copy DLLs to Target"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+
+
+                                <!--  Delete  -->
+                                <Button
+                                    Grid.Row="0"
+                                    Grid.Column="2"
+                                    Height="44"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding DeleteAllCommand}"
+                                    Style="{StaticResource MaterialDesignFlatDarkBgButton}"
+                                    ToolTip="Delete all data from target">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="Delete" />
+                                        <TextBlock FontWeight="Bold" Text="Delete All" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button
+                                    Grid.Row="1"
+                                    Grid.Column="2"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding DeleteJsonCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="FileRemove" />
+                                        <TextBlock Text="Delete JSON" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    Grid.Row="2"
+                                    Grid.Column="2"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding DeleteRetentionCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="FileRemove" />
+                                        <TextBlock Text="Delete Retention" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    Grid.Row="3"
+                                    Grid.Column="2"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding DeletePythonCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="FileRemove" />
+                                        <TextBlock Text="Delete Python" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    Grid.Row="4"
+                                    Grid.Column="2"
+                                    Height="40"
+                                    Margin="8,0,4,8"
+                                    Command="{Binding DeletePageStubsCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Center"
+                                            Kind="FileRemove" />
+                                        <TextBlock Text="Delete Page Stubs" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
                         </StackPanel>
                     </Grid>
-
-                    <!-- Vertical Separator -->
-                    <Border Grid.Column="1" Background="#FF2D2D30" Margin="10,0"/>
-
-                    <!-- Cleanup Column -->
-                    <Grid Grid.Column="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Text="Clean Up Files" 
-                                   FontSize="18" FontWeight="Bold" 
-                                   Foreground="#FFF44336"
-                                   Margin="0,0,0,20"/>
-
-                        <StackPanel Grid.Row="1">
-                            <Button Content="Delete JSON" 
-                                    Click="DeleteJson_Click" 
-                                    Padding="10" Height="40" Background="#FFCC4444"/>
-                            <Button Content="Delete Retention" 
-                                    Click="DeleteRetention_Click" 
-                                    Padding="10" Height="40" Background="#FFCC4444" Margin="0,10,0,0"/>
-                            <Button Content="Delete Python" 
-                                    Click="DeletePython_Click" 
-                                    Padding="10" Height="40" Background="#FFCC4444" Margin="0,10,0,0"/>
-                            <Button Content="Delete Page Stubs" 
-                                    Click="DeletePageStubs_Click" 
-                                    Padding="10" Height="40" Background="#FFCC4444" Margin="0,10,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </Grid>
+                </ScrollViewer>
             </TabItem>
 
-            <!-- Utility Tab -->
-            <TabItem Header="Utility">
-                <Grid Margin="20">
+            <!--  Utility Tab  -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Kind="Wrench" />
+                        <TextBlock Text="Utility" />
+                    </StackPanel>
+                </TabItem.Header>
+                <Grid Margin="16">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="Utilities" 
-                               FontSize="18" FontWeight="Bold" Margin="0,0,0,20"/>
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="32" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Row="1">
-                        <Button Content="Check Network Settings" 
-                                Click="NetworkCheck_Click" 
-                                Padding="10" Height="40"/>
-                        <Button Content="Check for Large Files" 
-                                Click="CheckLargeFiles_Click" 
-                                Padding="10" Height="40" Margin="0,10,0,0"/>
-                    </StackPanel>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
 
-                    <TextBox Grid.Row="2" x:Name="UtilityOutputTextBox" 
-                             IsReadOnly="True" 
-                             VerticalScrollBarVisibility="Auto"
-                             TextWrapping="Wrap"
-                             FontFamily="Consolas"
-                             Margin="0,20,0,0"
-                             Padding="5"/>
+                        <Button
+                            Grid.Column="0"
+                            Height="44"
+                            Margin="0,0,0,0"
+                            Command="{Binding CheckNetworkCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Kind="Lan" />
+                                <TextBlock Text="Check Network Settings" />
+                            </StackPanel>
+                        </Button>
+
+                        <materialDesign:Card
+                            Grid.Row="1"
+                            Grid.Column="0"
+                            Margin="0,8,0,0"
+                            Padding="4">
+                            <TextBox
+                                MinHeight="200"
+                                VerticalContentAlignment="Top"
+                                materialDesign:HintAssist.Hint="Network"
+                                AcceptsReturn="True"
+                                FontFamily="Cascadia Code, Consolas, Courier New"
+                                IsReadOnly="True"
+                                Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                Text="{Binding NetworkUtilityOutput, Mode=OneWay}"
+                                TextWrapping="Wrap"
+                                VerticalScrollBarVisibility="Auto" />
+                        </materialDesign:Card>
+
+                        <Button
+                            Grid.Row="0"
+                            Grid.Column="2"
+                            Height="44"
+                            Command="{Binding CheckLargeFilesCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Kind="FileFind" />
+                                <TextBlock Text="Check for Large Files" />
+                            </StackPanel>
+                        </Button>
+
+                        <materialDesign:Card
+                            Grid.Row="1"
+                            Grid.Column="2"
+                            Margin="0,8,0,0"
+                            Padding="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock
+                                    Grid.Row="0"
+                                    Margin="0,0,0,8"
+                                    Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                    Text="{Binding UtilityOutput, Mode=OneWay}"
+                                    TextWrapping="Wrap" />
+
+                                <ListView
+                                    Grid.Row="1"
+                                    Width="445"
+                                    MinHeight="150"
+                                    MaxHeight="400"
+                                    ItemsSource="{Binding LargeFiles}"
+                                    ScrollViewer.HorizontalScrollBarVisibility="Hidden">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock
+                                                        FontWeight="SemiBold"
+                                                        Text="{Binding FileName}"
+                                                        TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock
+                                                        Width="240"
+                                                        HorizontalAlignment="Left"
+                                                        Opacity="0.7"
+                                                        Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                                        Text="{Binding DirectoryPath}"
+                                                        TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <StackPanel
+                                                    Grid.Column="1"
+                                                    HorizontalAlignment="Right"
+                                                    Orientation="Horizontal">
+                                                    <TextBlock
+                                                        Margin="8,0"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{DynamicResource MaterialDesign.Brush.Secondary}"
+                                                        Text="{Binding SizeFormatted}" />
+                                                    <Button
+                                                        Grid.Column="2"
+                                                        Command="{Binding OpenFolderCommand}"
+                                                        Style="{StaticResource MaterialDesignIconButton}"
+                                                        ToolTip="Open folder in File Explorer">
+                                                        <materialDesign:PackIcon Kind="FolderOpen" />
+                                                    </Button>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </Grid>
+                        </materialDesign:Card>
+
+                    </Grid>
                 </Grid>
             </TabItem>
 
-            <!-- PMX Launcher Tab -->
-            <TabItem Header="PMX Launcher">
+            <!--  PMX Launcher Tab  -->
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Kind="RocketLaunch" />
+                        <TextBlock Text="PMX Launcher" />
+                    </StackPanel>
+                </TabItem.Header>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="20">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                    <StackPanel Margin="16">
 
-                        <TextBlock Grid.Row="0" Text="PMX Launcher" 
-                                   FontSize="18" FontWeight="Bold" Margin="0,0,0,20"/>
+                        <!--  Application Section  -->
+                        <materialDesign:Card Margin="0,0,0,16" Padding="16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Row="1">
-                            <!-- Application Section -->
-                            <Border BorderBrush="#FF2D2D30" BorderThickness="1" Padding="10" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="Application" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Offline Mode"
+                                        IsChecked="{Binding OfflineMode}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Auto-Accept Start Prompts (OEM Required)"
+                                        IsChecked="{Binding AutoAdvance}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Software Only Rendering"
+                                        IsChecked="{Binding SoftwareRendering}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,16"
+                                        Content="Free Window - Movable &amp; Resizable"
+                                        IsChecked="{Binding FreeWindow}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
 
-                                    <CheckBox x:Name="OfflineCheckBox" Content="Offline Mode (-offline)" Margin="0,3"/>
-                                    <CheckBox x:Name="AutoAdvanceCheckBox" Content="Auto-Accept Prompts (-autoAdvance)" Margin="0,3"/>
-                                    <CheckBox x:Name="SoftwareRenderingCheckBox" Content="Software Only Rendering (-software)" Margin="0,3"/>
-                                    <CheckBox x:Name="FreeWindowCheckBox" Content="Free Window - Movable &amp; Resizable (-freeWindow)" Margin="0,3"/>
+                                    <TextBox
+                                        Margin="0,0,0,16"
+                                        materialDesign:HintAssist.Hint="Start Page"
+                                        materialDesign:HintAssist.IsFloating="True"
+                                        Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                        Text="{Binding StartPage, UpdateSourceTrigger=PropertyChanged}" />
 
-                                    <Grid Margin="0,8,0,3">
+                                    <Grid Margin="0,0,0,8">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Start Page:" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="1" x:Name="StartPageTextBox" Padding="5" 
-                                                 ToolTip="Page reference name to navigate to on startup (-page:[name])"/>
+                                        <TextBox
+                                            Grid.Column="0"
+                                            materialDesign:HintAssist.Hint="Width"
+                                            materialDesign:HintAssist.IsFloating="True"
+                                            Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                            Text="{Binding WindowWidth, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Margin="16,0"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
+                                            Text="×" />
+                                        <TextBox
+                                            Grid.Column="2"
+                                            materialDesign:HintAssist.Hint="Height"
+                                            materialDesign:HintAssist.IsFloating="True"
+                                            Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                            Text="{Binding WindowHeight, UpdateSourceTrigger=PropertyChanged}" />
                                     </Grid>
 
-                                    <Grid Margin="0,3,0,3">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="80"/>
-                                            <ColumnDefinition Width="20"/>
-                                            <ColumnDefinition Width="80"/>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Window Size:" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="1" x:Name="WindowWidthTextBox" Padding="5" 
-                                                 ToolTip="Width in pixels"/>
-                                        <TextBlock Grid.Column="2" Text="×" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="3" x:Name="WindowHeightTextBox" Padding="5" 
-                                                 ToolTip="Height in pixels (-size:[width]:[height])"/>
-                                    </Grid>
-
-                                    <Grid Margin="0,3,0,3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="80"/>
-                                            <ColumnDefinition Width="20"/>
-                                            <ColumnDefinition Width="80"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Window Position:" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="1" x:Name="WindowXTextBox" Padding="5" 
-                                                 ToolTip="X position in pixels"/>
-                                        <TextBlock Grid.Column="2" Text="," HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="3" x:Name="WindowYTextBox" Padding="5" 
-                                                 ToolTip="Y position in pixels (-position:[X]:[Y])"/>
+                                        <TextBox
+                                            Grid.Column="0"
+                                            materialDesign:HintAssist.Hint="X Position"
+                                            materialDesign:HintAssist.IsFloating="True"
+                                            Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                            Text="{Binding WindowX, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Margin="16,0"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
+                                            Text="," />
+                                        <TextBox
+                                            Grid.Column="2"
+                                            materialDesign:HintAssist.Hint="Y Position"
+                                            materialDesign:HintAssist.IsFloating="True"
+                                            Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                            Text="{Binding WindowY, UpdateSourceTrigger=PropertyChanged}" />
                                     </Grid>
                                 </StackPanel>
-                            </Border>
 
-                            <!-- Vision Section -->
-                            <Border BorderBrush="#FF2D2D30" BorderThickness="1" Padding="10" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Text="Vision" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                                    <CheckBox x:Name="VisionDebugCheckBox" Content="Vision Debug - Verbose Error Reporting (-visionDebug)" Margin="0,3"/>
-                                    <CheckBox x:Name="VisionTraceCheckBox" Content="Vision Trace - External Vision Tracing (-visionTrace)" Margin="0,3"/>
+                                <StackPanel Grid.Column="2">
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Vision Debug - Verbose Errors"
+                                        IsChecked="{Binding VisionDebug}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Content="Vision Trace - External Tracing"
+                                        IsChecked="{Binding VisionTrace}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+
+                                    <Separator Margin="0,10" />
+
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Record On Startup"
+                                        IsChecked="{Binding RecordOnStartup}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Record High Quality"
+                                        IsChecked="{Binding RecordHighQuality}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Record High Framerate - 30 FPS"
+                                        IsChecked="{Binding RecordHighFramerate}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,8"
+                                        Content="Record Microphone"
+                                        IsChecked="{Binding RecordMicrophone}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+                                    <CheckBox
+                                        Margin="0,0,0,16"
+                                        Content="Record Webcam"
+                                        IsChecked="{Binding RecordWebcam}"
+                                        Style="{StaticResource MaterialDesignCheckBox}" />
+
+                                    <TextBox
+                                        Width="200"
+                                        HorizontalAlignment="Left"
+                                        materialDesign:HintAssist.Hint="Max Recording Segments"
+                                        materialDesign:HintAssist.IsFloating="True"
+                                        Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                        Text="{Binding MaxSegments, UpdateSourceTrigger=PropertyChanged}"
+                                        ToolTip="Maximum number of consecutive 30-minute segments" />
                                 </StackPanel>
-                            </Border>
+                            </Grid>
+                        </materialDesign:Card>
 
-                            <!-- Screen Recording Section -->
-                            <Border BorderBrush="#FF2D2D30" BorderThickness="1" Padding="10" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Text="Screen Recording" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                                    <CheckBox x:Name="RecordOnStartupCheckBox" Content="Record On Startup (-recordOnStartup)" Margin="0,3"/>
-                                    <CheckBox x:Name="RecordHighQualityCheckBox" Content="Record High Quality (-recordHighQuality)" Margin="0,3"/>
-                                    <CheckBox x:Name="RecordHighFramerateCheckBox" Content="Record High Framerate - 30 FPS (-recordHighFramerate)" Margin="0,3"/>
-                                    <CheckBox x:Name="RecordMicrophoneCheckBox" Content="Record Microphone (-recordMicrophone)" Margin="0,3"/>
-                                    <CheckBox x:Name="RecordWebcamCheckBox" Content="Record Webcam (-recordWebcam)" Margin="0,3"/>
-
-                                    <Grid Margin="0,8,0,3">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="180"/>
-                                            <ColumnDefinition Width="100"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Max Recording Segments:" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="1" x:Name="MaxSegmentsTextBox" Padding="5" 
-                                                 ToolTip="Maximum number of consecutive 30-minute segments (-recordMaxSegments:[maxSegments])"/>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-
-                        <Button Grid.Row="2" Content="Launch PMX" 
-                                Click="LaunchPMX_Click" 
-                                Padding="10" Height="50" 
-                                FontSize="16" FontWeight="Bold"
-                                Background="#FF4CAF50"
-                                Margin="0,10,0,0"/>
-                    </Grid>
+                        <Button
+                            Height="56"
+                            Background="{DynamicResource MaterialDesign.Brush.Primary}"
+                            Command="{Binding LaunchPmxCommand}"
+                            FontSize="16"
+                            Style="{StaticResource MaterialDesignRaisedButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon
+                                    Width="24"
+                                    Height="24"
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center"
+                                    Kind="RocketLaunch" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    FontWeight="Bold"
+                                    Text="Launch PMX" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </ScrollViewer>
             </TabItem>
         </TabControl>
 
-        <!-- Status Bar -->
-        <Border Grid.Row="2" Background="#FF2D2D30" Padding="10">
-            <TextBlock x:Name="StatusTextBlock" 
-                       Text="Ready" 
-                       Foreground="White"/>
-        </Border>
+        <!--  Status Bar  -->
+        <materialDesign:ColorZone
+            Grid.Row="2"
+            Padding="16,12"
+            Mode="PrimaryDark">
+            <TextBlock Style="{StaticResource MaterialDesignBody2TextBlock}" Text="{Binding StatusMessage}" />
+        </materialDesign:ColorZone>
     </Grid>
 </Window>

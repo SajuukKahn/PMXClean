@@ -1,0 +1,44 @@
+<!--
+    Optional MSBuild Integration for Python Version Updates
+    
+    To enable automatic Python version updates during build:
+    1. Uncomment the Target below
+    2. Add to PMXClean.csproj before the closing </Project> tag
+    
+    Note: This will run on EVERY build and may slow down compilation.
+    Recommended for CI/CD builds only, not local development.
+-->
+
+<!--
+<Target Name="UpdatePythonVersions" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
+  <Message Importance="high" Text="Updating Python versions from GitHub..." />
+  <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(SolutionDir)UpdatePythonVersions.ps1&quot;" 
+        IgnoreExitCode="true" 
+        ContinueOnError="true" />
+</Target>
+-->
+
+<!--
+    Alternative: Run only when environment variable is set
+    Usage: 
+      $env:UPDATE_PYTHON_VERSIONS = "1"
+      dotnet build
+-->
+
+<!--
+<Target Name="UpdatePythonVersionsOnDemand" BeforeTargets="BeforeBuild" Condition="'$(UPDATE_PYTHON_VERSIONS)' == '1'">
+  <Message Importance="high" Text="Updating Python versions from GitHub (on-demand)..." />
+  <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(SolutionDir)UpdatePythonVersions.ps1&quot;" />
+</Target>
+-->
+
+<!--
+    For CI/CD: Run on Release builds only
+-->
+
+<!--
+<Target Name="UpdatePythonVersionsCI" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release' AND '$(CI)' == 'true'">
+  <Message Importance="high" Text="Updating Python versions from GitHub (CI build)..." />
+  <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(SolutionDir)UpdatePythonVersions.ps1&quot; -Token $(GITHUB_TOKEN)" />
+</Target>
+-->

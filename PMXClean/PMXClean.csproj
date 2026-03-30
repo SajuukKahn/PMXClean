@@ -35,4 +35,11 @@
     </Content>
   </ItemGroup>
 
+  <!-- Embed PMXVersions Python files as resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="PMXVersions\**\*.py">
+      <LogicalName>PMXVersions\%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,57 @@
+﻿#DisplayName = Start Transport (Bi-Directional)
+#Description = Signal the adjacent machine to initiate PCB handover process.
+#Icon = RayStartArrowMaterialIcon
+#Flags = IsProcessStep
+
+import xml.etree.ElementTree as ET
+
+def __inputs__():
+    pass
+
+def __run__():
+    if Settings.SupervisoryConnection is None:
+        __throwexception__(Exceptions.ConfigValueRequired)
+        return
+
+    _ReverseTransferStatus_.IsTransferring.Value = True
+    if not SendSecondConnection(buildMessage()):
+        __throwexception__(Exceptions.SendError)
+        return
+
+def buildMessage():
+    hermesRoot = ET.Element("Hermes")
+    hermesRoot.set("Timestamp", Settings.SupervisoryConnection.GetTimestamp().Timestamp.Value)
+    msgChild = ET.SubElement(hermesRoot, "StartTransport")
+    msgChild.set("BoardId", getBufferedBoardId())
+    
+    return ET.tostring(hermesRoot).decode()
+
+def getBufferedBoardId():
+    try:
+        xmlMsgTree = ET.fromstring(GetBufferedMessage())
+    except:
+        return ""
+    msgNode = xmlMsgTree.find("BoardAvailable")
+    if msgNode is not None:
+        return msgNode.get("BoardId", "")
+    else:
+        return ""
+
+def __outputs__():
+    pass
+
+def __exceptions__():
+    Exceptions.SendError = new.exception("#Communication.Exceptions.ErrorTitle", "#Communication.Exceptions.SendError", new.enum("Severity", "Error").Value, None)
+    Exceptions.ConfigValueRequired = new.exception("#Scripting.Exceptions.ConfigValueRequiredTitle", "#Scripting.Exceptions.ConfigValueRequired", new.enum("Severity", "Error").Value, None)
+
+def __throwexception__(exception, name = ""):
+    __exceptionhandling__()
+    exception.ExceptionData.MessageParams = tuple([GetDisplayName(), name])
+    WriteToLog(exception.ExceptionData.FormattedMessage)
+    PVA.Exceptions.ThrowException(exception)
+
+def __exceptionhandling__():
+    pass
+
+def __exceptionrecovery__():
+    pass
