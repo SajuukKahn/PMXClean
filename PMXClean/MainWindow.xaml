@@ -8,10 +8,9 @@
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="clr-namespace:PMXClean.ViewModels"
-    Title="PMX Utility Tool"
+    Title="PathMaster X Utility Tool"
     Width="1000"
     Height="700"
-    Background="{DynamicResource MaterialDesign.Brush.Background}"
     Style="{StaticResource MaterialDesignWindow}"
     WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
@@ -31,75 +30,46 @@
         <materialDesign:ColorZone
             Grid.Row="0"
             Padding="16"
-            Mode="PrimaryDark">
+            Mode="SecondaryDark">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="5*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock
-                    Grid.Row="0"
-                    Grid.Column="0"
-                    Margin="0,0,16,0"
-                    VerticalAlignment="Center"
-                    Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
-                    Text="Target Path:" />
                 <ComboBox
-                    Grid.Row="0"
-                    Grid.Column="1"
                     Margin="0,0,16,0"
                     materialDesign:HintAssist.Hint="Select installation"
                     DisplayMemberPath="DisplayName"
                     ItemsSource="{Binding Installations}"
                     SelectedItem="{Binding SelectedInstallation}"
-                    Style="{StaticResource MaterialDesignOutlinedComboBox}" />
-                <Button
-                    Grid.Row="0"
-                    Grid.Column="2"
-                    Margin="0,0,8,0"
-                    VerticalAlignment="Top"
-                    Command="{Binding OpenTargetFolderCommand}"
-                    Style="{StaticResource MaterialDesignOutlinedButton}"
-                    ToolTip="Open target folder in File Explorer">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon
-                            Margin="0,0,8,0"
-                            VerticalAlignment="Center"
-                            Kind="FolderOpen" />
-                        <TextBlock VerticalAlignment="Center" Text="Open Folder" />
-                    </StackPanel>
-                </Button>
-                <Button
-                    Grid.Row="0"
-                    Grid.Column="3"
-                    VerticalAlignment="Top"
-                    Command="{Binding RefreshPathsCommand}"
-                    Style="{StaticResource MaterialDesignOutlinedButton}">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon
-                            Margin="0,0,8,0"
-                            VerticalAlignment="Center"
-                            Kind="Refresh" />
-                        <TextBlock VerticalAlignment="Center" Text="Refresh" />
-                    </StackPanel>
-                </Button>
+                    Style="{StaticResource MaterialDesignFilledComboBox}" />
+                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Button
+                        Margin="0,0,8,0"
+                        Command="{Binding OpenTargetFolderCommand}"
+                        Style="{StaticResource MaterialDesignFloatingActionMiniLightButton}"
+                        ToolTip="Open target installation folder in File Explorer">
+                        <materialDesign:PackIcon Kind="FolderOpen" />
+                    </Button>
+                    <Button
+                        Command="{Binding RefreshPathsCommand}"
+                        Style="{StaticResource MaterialDesignFloatingActionMiniLightButton}"
+                        ToolTip="Refresh installation paths">
+                        <materialDesign:PackIcon Kind="Refresh" />
+                    </Button>
+                </WrapPanel>
 
                 <TextBlock
-                    Grid.Row="0"
                     Grid.Column="2"
-                    Grid.ColumnSpan="2"
-                    Margin="0,0,0,-8"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Bottom"
-                    Opacity="0.7"
-                    Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MaterialDesignLabelSmallTextBlock}"
                     Text="{Binding FileVersionText}" />
             </Grid>
         </materialDesign:ColorZone>
@@ -108,7 +78,7 @@
         <TabControl
             Grid.Row="1"
             Margin="0,0,0,0"
-            Style="{StaticResource MaterialDesignFilledTabControl}">
+            Style="{StaticResource MaterialDesignTabControl}">
 
             <!--  Compare Python Tab  -->
             <TabItem>
@@ -138,25 +108,20 @@
                                 <ComboBox
                                     Grid.Row="0"
                                     Grid.Column="0"
+                                    Height="46"
                                     Margin="0,0,16,0"
                                     materialDesign:HintAssist.Hint="Source Version"
                                     materialDesign:HintAssist.IsFloating="True"
                                     ItemsSource="{Binding AvailableVersions}"
                                     SelectedItem="{Binding SelectedVersion}"
-                                    Style="{StaticResource MaterialDesignOutlinedComboBox}" />
+                                    Style="{StaticResource MaterialDesignFilledComboBox}" />
                                 <Button
                                     Grid.Row="0"
                                     Grid.Column="1"
                                     Command="{Binding AutoMatchVersionCommand}"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}"
-                                    ToolTip="Select version matching the target installation">
-                                    <StackPanel Orientation="Horizontal">
-                                        <materialDesign:PackIcon
-                                            Margin="0,0,8,0"
-                                            VerticalAlignment="Center"
-                                            Kind="AutoFix" />
-                                        <TextBlock Text="Auto-Match" />
-                                    </StackPanel>
+                                    Style="{StaticResource MaterialDesignFloatingActionMiniButton}"
+                                    ToolTip="Auto-select version matching the target installation">
+                                    <materialDesign:PackIcon Kind="AutoFix" />
                                 </Button>
 
                                 <TextBlock
@@ -204,21 +169,25 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <!--  Backup Instance Selection Card  -->
-                            <materialDesign:Card Margin="0,0,0,0" Padding="16">
+                            <materialDesign:Card
+                                Height="84"
+                                Margin="0,0,0,0"
+                                Padding="16">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="3*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid>
                                         <ComboBox
+                                            Height="46"
                                             Margin="0,0,8,0"
                                             materialDesign:HintAssist.Hint="Backup"
                                             ItemsSource="{Binding BackupInstances}"
                                             SelectedItem="{Binding SelectedBackup}">
                                             <ComboBox.Style>
-                                                <Style BasedOn="{StaticResource MaterialDesignOutlinedComboBox}" TargetType="ComboBox">
+                                                <Style BasedOn="{StaticResource MaterialDesignFilledComboBox}" TargetType="ComboBox">
                                                     <Setter Property="Visibility" Value="Visible" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsBackupRenaming}" Value="True">
@@ -256,50 +225,37 @@
                                         </TextBox>
                                     </Grid>
 
-                                    <UniformGrid Grid.Column="1" Columns="3">
+                                    <WrapPanel
+                                        Grid.Column="1"
+                                        Margin="16,0"
+                                        VerticalAlignment="Center">
                                         <Button
                                             Margin="0,0,4,0"
                                             Command="{Binding StartNewBackupCommand}"
-                                            Foreground="{DynamicResource MaterialDesign.Brush.Primary}"
-                                            Style="{StaticResource MaterialDesignFlatButton}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <materialDesign:PackIcon
-                                                    Margin="0,0,4,0"
-                                                    VerticalAlignment="Center"
-                                                    Kind="Plus" />
-                                                <TextBlock Text="New" />
-                                            </StackPanel>
+                                            Style="{StaticResource MaterialDesignFloatingActionMiniButton}"
+                                            ToolTip="Create new backup">
+                                            <materialDesign:PackIcon Kind="Plus" />
                                         </Button>
                                         <Button
                                             Margin="4,0"
                                             Command="{Binding StartRenameBackupCommand}"
-                                            Style="{StaticResource MaterialDesignFlatButton}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <materialDesign:PackIcon
-                                                    Margin="0,0,4,0"
-                                                    VerticalAlignment="Center"
-                                                    Kind="RenameBox" />
-                                                <TextBlock Text="Rename" />
-                                            </StackPanel>
+                                            Style="{StaticResource MaterialDesignFloatingActionMiniDarkButton}"
+                                            ToolTip="Rename selected backup">
+                                            <materialDesign:PackIcon Kind="RenameBox" />
                                         </Button>
                                         <Button
                                             Margin="4,0,0,0"
                                             Command="{Binding DeleteBackupCommand}"
-                                            Foreground="{DynamicResource MaterialDesign.Brush.Secondary}"
-                                            Style="{StaticResource MaterialDesignFlatButton}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <materialDesign:PackIcon
-                                                    Margin="0,0,4,0"
-                                                    VerticalAlignment="Center"
-                                                    Kind="Delete" />
-                                                <TextBlock Text="Delete" />
-                                            </StackPanel>
+                                            Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryButton}"
+                                            ToolTip="Delete selected backup">
+                                            <materialDesign:PackIcon Kind="Delete" />
                                         </Button>
-                                    </UniformGrid>
+                                    </WrapPanel>
 
                                     <TextBlock
                                         Grid.Column="2"
-                                        Margin="8,0,0,0"
+                                        Margin="0,0,0,0"
+                                        VerticalAlignment="Center"
                                         Style="{StaticResource MaterialDesignCaptionTextBlock}"
                                         Text="{Binding BackupInfoText}"
                                         TextWrapping="Wrap" />
@@ -329,7 +285,6 @@
                                 <Button
                                     Height="44"
                                     Margin="8,0,4,8"
-                                    Background="{DynamicResource MaterialDesign.Brush.Primary}"
                                     Command="{Binding BackupAllFilesCommand}"
                                     Style="{StaticResource MaterialDesignRaisedButton}">
                                     <StackPanel Orientation="Horizontal">
@@ -346,28 +301,28 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding BackupJsonCommand}"
                                     Content="Back up JSON"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatButton}" />
                                 <Button
                                     Grid.Row="2"
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding BackupRetentionCommand}"
                                     Content="Back up Retention"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatButton}" />
                                 <Button
                                     Grid.Row="3"
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding BackupPythonCommand}"
                                     Content="Back up Python"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatButton}" />
                                 <Button
                                     Grid.Row="4"
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding BackupStubsCommand}"
                                     Content="Back up Page Stubs"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatButton}" />
 
                                 <Button
                                     Grid.Row="5"
@@ -375,7 +330,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding BackupCameraFilesCommand}"
                                     Content="Back up Camera Files"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatButton}" />
 
                                 <Button
                                     Grid.Row="6"
@@ -383,7 +338,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding BackupDllsCommand}"
                                     Content="Back up DLLs"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatButton}" />
 
 
                                 <!--  Copy to Destination  -->
@@ -393,14 +348,14 @@
                                     Height="44"
                                     Margin="8,0,4,8"
                                     Command="{Binding RestoreBackupCommand}"
-                                    Style="{StaticResource MaterialDesignFlatSecondaryDarkBgButton}"
+                                    Style="{StaticResource MaterialDesignRaisedDarkButton}"
                                     ToolTip="Restore selected backup to target path">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Margin="0,0,8,0"
                                             VerticalAlignment="Center"
                                             Kind="Restore" />
-                                        <TextBlock FontWeight="Bold" Text="Restore All to Target" />
+                                        <TextBlock FontWeight="Bold" Text="Write All to Target" />
                                     </StackPanel>
                                 </Button>
                                 <Button
@@ -410,7 +365,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyJsonToDestinationCommand}"
                                     Content="Copy JSON to Target"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="2"
                                     Grid.Column="1"
@@ -418,7 +373,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyRetentionToDestinationCommand}"
                                     Content="Copy Retention to Target"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="3"
                                     Grid.Column="1"
@@ -426,7 +381,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyPythonToDestinationCommand}"
                                     Content="Copy Python to Target"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="4"
                                     Grid.Column="1"
@@ -434,7 +389,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyStubsToDestinationCommand}"
                                     Content="Copy Stubs to Target"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="5"
                                     Grid.Column="1"
@@ -442,7 +397,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyCameraFilesToDestinationCommand}"
                                     Content="Copy Camera to Target"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="6"
                                     Grid.Column="1"
@@ -450,7 +405,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyDllsToDestinationCommand}"
                                     Content="Copy DLLs to Target"
-                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                                    Style="{StaticResource MaterialDesignFlatLightButton}" />
 
 
                                 <!--  Delete  -->
@@ -460,7 +415,7 @@
                                     Height="44"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeleteAllCommand}"
-                                    Style="{StaticResource MaterialDesignFlatDarkBgButton}"
+                                    Style="{StaticResource MaterialDesignRaisedSecondaryButton}"
                                     ToolTip="Delete all data from target">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
@@ -477,7 +432,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeleteJsonCommand}"
-                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Margin="0,0,8,0"
@@ -492,7 +447,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeleteRetentionCommand}"
-                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Margin="0,0,8,0"
@@ -507,7 +462,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeletePythonCommand}"
-                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Margin="0,0,8,0"
@@ -522,7 +477,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeletePageStubsCommand}"
-                                    Style="{StaticResource MaterialDesignOutlinedSecondaryButton}">
+                                    Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Margin="0,0,8,0"
@@ -589,8 +544,8 @@
                             <TextBox
                                 MinHeight="200"
                                 VerticalContentAlignment="Top"
-                                materialDesign:HintAssist.Hint="Network"
                                 AcceptsReturn="True"
+                                BorderThickness="0"
                                 FontFamily="Cascadia Code, Consolas, Courier New"
                                 IsReadOnly="True"
                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
@@ -666,12 +621,11 @@
                                                     <TextBlock
                                                         Margin="8,0"
                                                         VerticalAlignment="Center"
-                                                        Foreground="{DynamicResource MaterialDesign.Brush.Secondary}"
                                                         Text="{Binding SizeFormatted}" />
                                                     <Button
                                                         Grid.Column="2"
                                                         Command="{Binding OpenFolderCommand}"
-                                                        Style="{StaticResource MaterialDesignIconButton}"
+                                                        Style="{StaticResource MaterialDesignPaperSecondaryButton}"
                                                         ToolTip="Open folder in File Explorer">
                                                         <materialDesign:PackIcon Kind="FolderOpen" />
                                                     </Button>
@@ -845,7 +799,6 @@
 
                         <Button
                             Height="56"
-                            Background="{DynamicResource MaterialDesign.Brush.Primary}"
                             Command="{Binding LaunchPmxCommand}"
                             FontSize="16"
                             Style="{StaticResource MaterialDesignRaisedButton}">
@@ -871,7 +824,7 @@
         <materialDesign:ColorZone
             Grid.Row="2"
             Padding="16,12"
-            Mode="PrimaryDark">
+            Mode="SecondaryDark">
             <TextBlock Style="{StaticResource MaterialDesignBody2TextBlock}" Text="{Binding StatusMessage}" />
         </materialDesign:ColorZone>
     </Grid>

@@ -350,45 +350,12 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            return type switch
-            {
-                InstallationType.ProgramFiles => $"[Production] {path}",
-                InstallationType.UserDevelopment => GenerateDevDisplayName(path),
-                _ => path
-            };
+            return $"{(type == InstallationType.ProgramFiles ? "[Production]" : "[Dev]")} {path}";
         }
         catch
         {
             return path;
         }
-    }
-
-    private static string GenerateDevDisplayName(string path)
-    {
-        var parts = path.Split(Path.DirectorySeparatorChar);
-        var relevantParts = new List<string>();
-
-        for (int i = parts.Length - 1; i >= 0; i--)
-        {
-            relevantParts.Insert(0, parts[i]);
-            if (parts[i].Equals("bin", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i > 0)
-                {
-                    relevantParts.Insert(0, parts[i - 1]);
-                }
-
-                break;
-            }
-
-            if (relevantParts.Count > 3)
-            {
-                break;
-            }
-        }
-
-        var shortPath = string.Join("\\", relevantParts);
-        return $"[Dev] {shortPath}";
     }
 
     private void UpdateFileVersionDisplay()
@@ -505,7 +472,7 @@ public sealed partial class MainViewModel : ObservableObject
         var fileCount = resourceNames
             .Count(name => name.StartsWith($"PMXVersions\\{SelectedVersion}\\", StringComparison.OrdinalIgnoreCase));
 
-        VersionInfoText = $"Source: {SelectedVersion} ({fileCount} Python files embedded)";
+        VersionInfoText = $"Source: {SelectedVersion} ({fileCount} Python files)";
     }
 
     [RelayCommand]
@@ -552,7 +519,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             else
             {
-                StatusMessage = $"No matching version found for {fileVersion}. Using 'master' if available.";
+                StatusMessage = $"No matching version found for {fileVersion}";
                 var masterVersion = AvailableVersions.FirstOrDefault(v => v == "master");
                 if (masterVersion is not null)
                 {
@@ -768,10 +735,9 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void StartNewBackup()
     {
-        BackupEditName = $"Backup_{DateTime.Now:yyyyMMdd_HHmmss}";
-        IsBackupCreating = true;
         IsBackupRenaming = false;
-        StatusMessage = "Enter backup name and press Enter or Esc to cancel";
+        BackupEditName = $"Backup_{DateTime.Now:yyyyMMdd_HHmmss}";
+        CreateNewBackup(BackupEditName);
     }
 
     [RelayCommand]
@@ -792,11 +758,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ConfirmBackupEdit()
     {
-        if (IsBackupCreating)
-        {
-            CreateNewBackup(BackupEditName);
-        }
-        else if (IsBackupRenaming && !string.IsNullOrEmpty(SelectedBackup))
+        if (IsBackupRenaming && !string.IsNullOrEmpty(SelectedBackup))
         {
             RenameBackup(SelectedBackup, BackupEditName);
         }
@@ -1291,9 +1253,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             StatusMessage = "Checking network settings...";
-            var output = new StringBuilder();
-            output.AppendLine("=== Network Configuration ===\n");
-
+            NetworkUtilityOutput = string.Empty;
             await Task.Run(() =>
             {
                 try
@@ -1312,30 +1272,28 @@ public sealed partial class MainViewModel : ObservableObject
                     {
                         string result = process.StandardOutput.ReadToEnd();
                         process.WaitForExit();
-                        output.AppendLine(result);
+                        NetworkUtilityOutput =  $"{result.TrimStart().TrimEnd()}\n\n";
                     }
                 }
                 catch (Exception ex)
                 {
-                    output.AppendLine($"Error getting network config: {ex.Message}");
+                    NetworkUtilityOutput = $"Error getting network config: {ex.Message}";
+                    return;
                 }
             });
 
-            output.AppendLine("\n=== Ping Tests ===\n");
-
-            output.AppendLine("Pinging Galil (100.100.100.101)...");
+            NetworkUtilityOutput += "Pinging Galil (100.100.100.101)\n";
             bool galilOnline = await PingHostAsync("100.100.100.101");
-            output.AppendLine(galilOnline ? "    Status: Online" : "    Status: Offline");
+            NetworkUtilityOutput += galilOnline ? "    Status: Online" : "    Status: Offline";
 
-            output.AppendLine("\nPinging Modbus I/O (100.100.100.110)...");
+            NetworkUtilityOutput += "\n\nPinging Modbus I/O (100.100.100.110)\n";
             bool modbusOnline = await PingHostAsync("100.100.100.110");
-            output.AppendLine(modbusOnline ? "    Status: Online" : "    Status: Offline");
+            NetworkUtilityOutput += modbusOnline ? "    Status: Online" : "    Status: Offline";
 
-            output.AppendLine("\nPinging Camera (200.200.200.201)...");
+            NetworkUtilityOutput += "\n\nPinging Camera (200.200.200.201)\n";
             bool cameraOnline = await PingHostAsync("200.200.200.201");
-            output.AppendLine(cameraOnline ? "    Status: Online" : "    Status: Offline");
+            NetworkUtilityOutput += cameraOnline ? "    Status: Online" : "    Status: Offline";
 
-            NetworkUtilityOutput = output.ToString();
             StatusMessage = "Network check complete";
         }
         catch (Exception ex)
@@ -1381,7 +1339,7 @@ public sealed partial class MainViewModel : ObservableObject
                 LargeFiles.Add(file);
             }
 
-            UtilityOutput = $"Found {LargeFiles.Count} files larger than 200MB.\nUse the buttons to open their locations.";
+            UtilityOutput = $"Found {LargeFiles.Count} files larger than 200MB";
             StatusMessage = $"Large file search complete - Found {LargeFiles.Count} files";
         }
         catch (Exception ex)
