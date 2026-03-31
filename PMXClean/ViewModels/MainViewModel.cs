@@ -9,6 +9,7 @@ using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PMXClean.Models;
+using PMXClean.Services;
 
 /// <summary>
 /// Main ViewModel for the PMXClean application.
@@ -18,14 +19,12 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly string _appBaseDirectory;
     private readonly string _backupsRootDirectory;
     private readonly string _comparisonTempDirectory;
-    private readonly string _winMergePath;
 
     public MainViewModel()
     {
         _appBaseDirectory = AppDomain.CurrentDomain.BaseDirectory;
         _backupsRootDirectory = Path.Combine(_appBaseDirectory, "Backups");
         _comparisonTempDirectory = Path.Combine(Path.GetTempPath(), "PMXClean_Compare");
-        _winMergePath = Path.Combine(_appBaseDirectory, @"WinMergePortable\App\WinMerge64\WinMergeU.exe");
 
         Installations = [];
         AvailableVersions = [];
@@ -133,6 +132,11 @@ public sealed partial class MainViewModel : ObservableObject
         public ObservableCollection<string> BackupInstances { get; }
         public ObservableCollection<LargeFileResult> LargeFiles { get; } = [];
 
+        /// <summary>
+        /// ViewModel for the built-in Python comparison feature.
+        /// </summary>
+        public ComparisonViewModel ComparisonViewModel { get; } = new();
+
         #endregion
 
     #region Property Changed Handlers
@@ -144,16 +148,22 @@ public sealed partial class MainViewModel : ObservableObject
             StatusMessage = $"Selected: {value.DisplayName}";
             UpdateFileVersionDisplay();
         }
+
+        NotifyBackupAndCopyCommandsCanExecuteChanged();
+        SetupComparisonPaths();
     }
 
     partial void OnSelectedVersionChanged(string? value)
     {
         UpdateVersionInfo();
+        SetupComparisonPaths();
     }
 
     partial void OnSelectedBackupChanged(string? value)
     {
         UpdateBackupInfo();
+        NotifyRemoveCommandsCanExecuteChanged();
+        NotifyBackupAndCopyCommandsCanExecuteChanged();
     }
 
     #endregion
@@ -162,18 +172,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void Initialize()
     {
-        ValidateWinMerge();
         DiscoverInstallations();
         LoadAvailableVersions();
         LoadBackupInstances();
-    }
-
-    private void ValidateWinMerge()
-    {
-        if (!File.Exists(_winMergePath))
-        {
-            StatusMessage = "Warning: WinMerge not found - Python comparison features will not work";
-        }
     }
 
     #endregion
@@ -472,7 +473,51 @@ public sealed partial class MainViewModel : ObservableObject
         var fileCount = resourceNames
             .Count(name => name.StartsWith($"PMXVersions\\{SelectedVersion}\\", StringComparison.OrdinalIgnoreCase));
 
-        VersionInfoText = $"Source: {SelectedVersion} ({fileCount} Python files)";
+        VersionInfoText = $"{fileCount} Python files";
+    }
+
+    /// <summary>
+    /// Sets up the comparison paths when version or installation changes.
+    /// Extracts the embedded version files to a temp directory and configures the ComparisonViewModel.
+    /// </summary>
+    private void SetupComparisonPaths()
+    {
+        if (string.IsNullOrEmpty(SelectedVersion) || SelectedInstallation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            string sourceDir = Path.Combine(_comparisonTempDirectory, "source");
+            CleanAndCreateDirectory(sourceDir);
+            int extractedCount = ExtractEmbeddedVersionFiles(SelectedVersion, sourceDir);
+
+            if (extractedCount == 0)
+            {
+                StatusMessage = $"No files found for version {SelectedVersion}";
+                return;
+            }
+
+            ComparisonViewModel.SetupComparison(
+                sourceDir,
+                SelectedInstallation.Path,
+                SelectedVersion,
+                "Installed");
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error setting up comparison: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Command to select a comparison item from the file tree.
+    /// </summary>
+    [RelayCommand]
+    private void SelectComparisonItem(ComparisonItem? item)
+    {
+        ComparisonViewModel.SelectedItem = item;
     }
 
     [RelayCommand]
@@ -533,65 +578,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private void CompareWithWinMerge()
-    {
-        if (string.IsNullOrEmpty(SelectedVersion))
-        {
-            StatusMessage = "Error: Please select a source version to compare";
-            return;
-        }
-
-        if (SelectedInstallation is null)
-        {
-            StatusMessage = "Error: Please select a target installation";
-            return;
-        }
-
-        if (!File.Exists(_winMergePath))
-        {
-            StatusMessage = "Error: WinMerge not found - Please ensure WinMergePortable is included";
-            return;
-        }
-
-        try
-        {
-            StatusMessage = "Preparing files for comparison...";
-
-            string sourceDir = Path.Combine(_comparisonTempDirectory, "source");
-            string targetDir = Path.Combine(_comparisonTempDirectory, "target");
-
-            CleanAndCreateDirectory(sourceDir);
-            CleanAndCreateDirectory(targetDir);
-
-            StatusMessage = $"Extracting {SelectedVersion} Python files...";
-            int extractedCount = ExtractEmbeddedVersionFiles(SelectedVersion, sourceDir);
-
-            if (extractedCount == 0)
-            {
-                StatusMessage = $"Error: No files found for version {SelectedVersion}";
-                return;
-            }
-
-            StatusMessage = "Copying target installation files...";
-            CopyPythonFilesExcludingLib(SelectedInstallation.Path, targetDir);
-
-            StatusMessage = "Starting WinMerge...";
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = _winMergePath,
-                Arguments = $"/r /f *.py /u /wl /dl \"{SelectedVersion}\" /dr \"Installed\" \"{sourceDir}\" \"{targetDir}\"",
-                UseShellExecute = true
-            });
-
-            StatusMessage = $"WinMerge launched - comparing {SelectedVersion} vs installed";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Error during comparison: {ex.Message}";
-        }
-    }
-
     private static void CleanAndCreateDirectory(string path)
     {
         if (Directory.Exists(path))
@@ -637,32 +623,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         return count;
-    }
-
-    private static void CopyPythonFilesExcludingLib(string sourceDir, string targetDir)
-    {
-        foreach (string file in Directory.GetFiles(sourceDir, "*.py", SearchOption.AllDirectories))
-        {
-            string relativePath = Path.GetRelativePath(sourceDir, file);
-
-            if (relativePath.StartsWith("lib\\", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.StartsWith("lib/", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.Contains("\\lib\\", StringComparison.OrdinalIgnoreCase) ||
-                relativePath.Contains("/lib/", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            string targetFile = Path.Combine(targetDir, relativePath);
-
-            string? targetFileDir = Path.GetDirectoryName(targetFile);
-            if (!string.IsNullOrEmpty(targetFileDir) && !Directory.Exists(targetFileDir))
-            {
-                Directory.CreateDirectory(targetFileDir);
-            }
-
-            File.Copy(file, targetFile, true);
-        }
     }
 
     #endregion
@@ -877,59 +837,116 @@ public sealed partial class MainViewModel : ObservableObject
 
     #region Backup Operations
 
-    [RelayCommand]
-    private void BackupAllFiles()
+        [RelayCommand]
+        private void OpenBackupFolder()
+        {
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                // Open the root backups directory if no backup selected
+                if (!Directory.Exists(_backupsRootDirectory))
+                {
+                    Directory.CreateDirectory(_backupsRootDirectory);
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = _backupsRootDirectory,
+                    UseShellExecute = true
+                });
+                StatusMessage = "Opened backups root folder";
+                return;
+            }
+
+            string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup);
+
+            if (!Directory.Exists(backupPath))
+            {
+                StatusMessage = "Error: Backup folder does not exist";
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = backupPath,
+                    UseShellExecute = true
+                });
+                StatusMessage = $"Opened backup folder: {SelectedBackup}";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error opening backup folder: {ex.Message}";
+            }
+        }
+
+        [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+        private async Task BackupAllFilesAsync()
+        {
+            if (!ValidateBackupSelected())
+            {
+                return;
+            }
+
+            try
+            {
+                StatusMessage = "Backing up all files...";
+
+                // Call each individual backup method
+                await BackupFilesByPatternAsync("*.json", "JSON");
+                await BackupFilesByPatternAsync("*.retention", "Retention");
+                await BackupFilesByPatternAsync("*.py", "Python");
+                await BackupFilesByPatternAsync("*.stub", "Page Stubs");
+                await BackupCameraFilesCoreAsync();
+                await BackupFeatureFolderAsync("Program", "Program");
+                await BackupFeatureFolderAsync("Inspection", "Inspection");
+                await BackupFilesByPatternAsync("*.DLL", "DLLs");
+
+                UpdateBackupInfo();
+                NotifyRemoveCommandsCanExecuteChanged();
+                StatusMessage = "All files backup complete";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error backing up all files: {ex.Message}";
+            }
+        }
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupJsonAsync() => await BackupFilesByPatternAsync("*.json", "JSON");
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupRetentionAsync() => await BackupFilesByPatternAsync("*.retention", "Retention");
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupPythonAsync() => await BackupFilesByPatternAsync("*.py", "Python");
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupDllsAsync() => await BackupFilesByPatternAsync("*.DLL", "DLLs");
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupStubsAsync() => await BackupFilesByPatternAsync("*.stub", "Page Stubs");
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupCameraFilesAsync()
     {
         if (!ValidateBackupSelected())
         {
             return;
         }
 
-        try
-        {
-            StatusMessage = "Backing up all files...";
-            string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup!);
-
-            CopyDirectoryStructure(SelectedInstallation!.Path, backupPath);
-            CopyDirectoryRecursive(SelectedInstallation.Path, backupPath);
-
-            UpdateBackupInfo();
-            StatusMessage = "All files backup complete";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Error backing up all files: {ex.Message}";
-        }
+        await BackupCameraFilesCoreAsync();
     }
 
-    [RelayCommand]
-    private void BackupJson() => BackupFilesByPattern("*.json", "JSON");
-
-    [RelayCommand]
-    private void BackupRetention() => BackupFilesByPattern("*.retention", "Retention");
-
-    [RelayCommand]
-    private void BackupPython() => BackupFilesByPattern("*.py", "Python");
-
-    [RelayCommand]
-    private void BackupDlls() => BackupFilesByPattern("*.DLL", "DLLs");
-
-    [RelayCommand]
-    private void BackupStubs() => BackupFilesByPattern("*.stub", "Page Stubs");
-
-    [RelayCommand]
-    private void BackupCameraFiles()
+    private async Task BackupCameraFilesCoreAsync()
     {
-        if (!ValidateBackupSelected())
-        {
-            return;
-        }
-
         try
         {
             StatusMessage = "Backing up Camera files...";
             string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup!);
-            string cameraSourcePath = Path.Combine(SelectedInstallation!.Path, "Device", "Camera");
+            string cameraSourcePath = Path.Combine(SelectedInstallation!.Path, "Device", "Camera", "Drivers");
 
             if (!Directory.Exists(cameraSourcePath))
             {
@@ -946,11 +963,102 @@ public sealed partial class MainViewModel : ObservableObject
             string[] excludedExtensions = [".dll", ".json", ".py"];
             int copiedCount = 0;
 
-            foreach (string file in Directory.GetFiles(cameraSourcePath, "*", SearchOption.AllDirectories))
+            await Task.Run(() =>
             {
-                string extension = Path.GetExtension(file).ToLowerInvariant();
-                if (!excludedExtensions.Contains(extension))
+                foreach (string file in Directory.GetFiles(cameraSourcePath, "*", SearchOption.AllDirectories))
                 {
+                    string extension = Path.GetExtension(file).ToLowerInvariant();
+                    if (!excludedExtensions.Contains(extension))
+                    {
+                        string relativePath = Path.GetRelativePath(SelectedInstallation.Path, file);
+                        string targetFile = Path.Combine(backupPath, relativePath);
+
+                        string? targetFileDir = Path.GetDirectoryName(targetFile);
+                        if (targetFileDir is not null && !Directory.Exists(targetFileDir))
+                        {
+                            Directory.CreateDirectory(targetFileDir);
+                        }
+
+                        File.Copy(file, targetFile, true);
+                        copiedCount++;
+                    }
+                }
+            });
+
+            UpdateBackupInfo();
+            NotifyRemoveCommandsCanExecuteChanged();
+            StatusMessage = $"Camera files backup complete ({copiedCount} files)";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error backing up Camera files: {ex.Message}";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupProgramFilesAsync()
+    {
+        if (!ValidateBackupSelected())
+        {
+            return;
+        }
+
+        await BackupFeatureFolderAsync("Program", "Program");
+    }
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task BackupInspectionFilesAsync()
+    {
+        if (!ValidateBackupSelected())
+        {
+            return;
+        }
+
+        await BackupFeatureFolderAsync("Inspection", "Inspection");
+    }
+
+    private async Task BackupFeatureFolderAsync(string folderName, string displayName)
+    {
+        try
+        {
+            StatusMessage = $"Backing up {displayName} files...";
+            string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup!);
+            string featureSourcePath = Path.Combine(SelectedInstallation!.Path, "Feature", folderName);
+
+            if (!Directory.Exists(featureSourcePath))
+            {
+                StatusMessage = $"{displayName} folder not found in target installation";
+                return;
+            }
+
+            if (!Directory.Exists(backupPath))
+            {
+                Directory.CreateDirectory(backupPath);
+            }
+
+            // Excluded: .dll files, Localization folder, Functions folder
+            string[] excludedFolders = ["Localization", "Functions"];
+            int copiedCount = 0;
+
+            await Task.Run(() =>
+            {
+                foreach (string file in Directory.GetFiles(featureSourcePath, "*", SearchOption.AllDirectories))
+                {
+                    // Skip .dll files
+                    if (Path.GetExtension(file).Equals(".dll", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // Skip files in excluded folders
+                    string? directory = Path.GetDirectoryName(file);
+                    if (directory is not null && excludedFolders.Any(ef =>
+                        directory.Contains(Path.DirectorySeparatorChar + ef + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                        directory.EndsWith(Path.DirectorySeparatorChar + ef, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
                     string relativePath = Path.GetRelativePath(SelectedInstallation.Path, file);
                     string targetFile = Path.Combine(backupPath, relativePath);
 
@@ -963,36 +1071,37 @@ public sealed partial class MainViewModel : ObservableObject
                     File.Copy(file, targetFile, true);
                     copiedCount++;
                 }
-            }
+            });
 
             UpdateBackupInfo();
-            StatusMessage = $"Camera files backup complete ({copiedCount} files)";
+            NotifyRemoveCommandsCanExecuteChanged();
+            StatusMessage = $"{displayName} files backup complete ({copiedCount} files)";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error backing up Camera files: {ex.Message}";
+            StatusMessage = $"Error backing up {displayName} files: {ex.Message}";
         }
     }
 
     #region Copy to Destination Commands
 
-    [RelayCommand]
-    private void CopyJsonToDestination() => CopyToDestinationByPattern("*.json", "JSON");
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyJsonToDestinationAsync() => await CopyToDestinationByPatternAsync("*.json", "JSON");
 
-    [RelayCommand]
-    private void CopyRetentionToDestination() => CopyToDestinationByPattern("*.retention", "Retention");
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyRetentionToDestinationAsync() => await CopyToDestinationByPatternAsync("*.retention", "Retention");
 
-    [RelayCommand]
-    private void CopyPythonToDestination() => CopyToDestinationByPattern("*.py", "Python");
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyPythonToDestinationAsync() => await CopyToDestinationByPatternAsync("*.py", "Python");
 
-    [RelayCommand]
-    private void CopyDllsToDestination() => CopyToDestinationByPattern("*.DLL", "DLLs");
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyDllsToDestinationAsync() => await CopyToDestinationByPatternAsync("*.DLL", "DLLs");
 
-    [RelayCommand]
-    private void CopyStubsToDestination() => CopyToDestinationByPattern("*.stub", "Page Stubs");
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyStubsToDestinationAsync() => await CopyToDestinationByPatternAsync("*.stub", "Page Stubs");
 
-    [RelayCommand]
-    private void CopyCameraFilesToDestination()
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyCameraFilesToDestinationAsync()
     {
         if (string.IsNullOrEmpty(SelectedBackup))
         {
@@ -1022,13 +1131,80 @@ public sealed partial class MainViewModel : ObservableObject
             string[] excludedExtensions = [".dll", ".json", ".py"];
             int copiedCount = 0;
 
-            foreach (string file in Directory.GetFiles(cameraBackupPath, "*", SearchOption.AllDirectories))
+            await Task.Run(() =>
             {
-                string extension = Path.GetExtension(file).ToLowerInvariant();
-                if (!excludedExtensions.Contains(extension))
+                foreach (string file in Directory.GetFiles(cameraBackupPath, "*", SearchOption.AllDirectories))
+                {
+                    string extension = Path.GetExtension(file).ToLowerInvariant();
+                    if (!excludedExtensions.Contains(extension))
+                    {
+                        string relativePath = Path.GetRelativePath(backupPath, file);
+                        string targetFile = Path.Combine(SelectedInstallation.Path, relativePath);
+
+                        string? targetFileDir = Path.GetDirectoryName(targetFile);
+                        if (targetFileDir is not null && !Directory.Exists(targetFileDir))
+                        {
+                            Directory.CreateDirectory(targetFileDir);
+                        }
+
+                        File.Copy(file, targetFile, true);
+                        copiedCount++;
+                    }
+                }
+            });
+
+            StatusMessage = $"Camera files copied to destination ({copiedCount} files)";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error copying Camera files: {ex.Message}";
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyProgramFilesToDestinationAsync()
+    {
+        if (!ValidateBackupSelected())
+        {
+            return;
+        }
+
+        await CopyFeatureFolderToDestinationAsync("Program", "Program");
+    }
+
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    private async Task CopyInspectionFilesToDestinationAsync()
+    {
+        if (!ValidateBackupSelected())
+        {
+            return;
+        }
+
+        await CopyFeatureFolderToDestinationAsync("Inspection", "Inspection");
+    }
+
+    private async Task CopyFeatureFolderToDestinationAsync(string folderName, string displayName)
+    {
+        try
+        {
+            StatusMessage = $"Copying {displayName} files to destination...";
+            string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup!);
+            string featureBackupPath = Path.Combine(backupPath, "Feature", folderName);
+
+            if (!Directory.Exists(featureBackupPath))
+            {
+                StatusMessage = $"No {displayName} files found in backup";
+                return;
+            }
+
+            int copiedCount = 0;
+
+            await Task.Run(() =>
+            {
+                foreach (string file in Directory.GetFiles(featureBackupPath, "*", SearchOption.AllDirectories))
                 {
                     string relativePath = Path.GetRelativePath(backupPath, file);
-                    string targetFile = Path.Combine(SelectedInstallation.Path, relativePath);
+                    string targetFile = Path.Combine(SelectedInstallation!.Path, relativePath);
 
                     string? targetFileDir = Path.GetDirectoryName(targetFile);
                     if (targetFileDir is not null && !Directory.Exists(targetFileDir))
@@ -1039,53 +1215,339 @@ public sealed partial class MainViewModel : ObservableObject
                     File.Copy(file, targetFile, true);
                     copiedCount++;
                 }
-            }
+            });
 
-            StatusMessage = $"Camera files copied to destination ({copiedCount} files)";
+            StatusMessage = $"{displayName} files copied to destination ({copiedCount} files)";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error copying Camera files: {ex.Message}";
+            StatusMessage = $"Error copying {displayName} files: {ex.Message}";
         }
     }
 
-    private void CopyToDestinationByPattern(string pattern, string fileType)
-    {
-        if (string.IsNullOrEmpty(SelectedBackup))
+        private async Task CopyToDestinationByPatternAsync(string pattern, string fileType)
         {
-            StatusMessage = "Error: Please select a backup first";
-            return;
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                StatusMessage = "Error: Please select a backup first";
+                return;
+            }
+
+            if (SelectedInstallation is null)
+            {
+                StatusMessage = "Error: Please select a target installation";
+                return;
+            }
+
+            try
+            {
+                StatusMessage = $"Copying {fileType} to destination...";
+                string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup);
+
+                if (!Directory.Exists(backupPath))
+                {
+                    StatusMessage = $"Error: Backup folder does not exist";
+                    return;
+                }
+
+                await CopyFilesByPatternAsync(backupPath, SelectedInstallation.Path, pattern);
+                StatusMessage = $"{fileType} copied to destination";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error copying {fileType}: {ex.Message}";
+            }
         }
 
-        if (SelectedInstallation is null)
+        #endregion
+
+        #region Remove from Backup Commands
+
+        [RelayCommand(CanExecute = nameof(CanRemoveJsonFromBackup))]
+        private async Task RemoveJsonFromBackupAsync() => await RemoveFromBackupByPatternAsync("*.json", "JSON");
+
+        [RelayCommand(CanExecute = nameof(CanRemoveRetentionFromBackup))]
+        private async Task RemoveRetentionFromBackupAsync() => await RemoveFromBackupByPatternAsync("*.retention", "Retention");
+
+        [RelayCommand(CanExecute = nameof(CanRemovePythonFromBackup))]
+        private async Task RemovePythonFromBackupAsync() => await RemoveFromBackupByPatternAsync("*.py", "Python");
+
+        [RelayCommand(CanExecute = nameof(CanRemoveDllsFromBackup))]
+        private async Task RemoveDllsFromBackupAsync() => await RemoveFromBackupByPatternAsync("*.DLL", "DLLs");
+
+        [RelayCommand(CanExecute = nameof(CanRemoveStubsFromBackup))]
+        private async Task RemoveStubsFromBackupAsync() => await RemoveFromBackupByPatternAsync("*.stub", "Page Stubs");
+
+        [RelayCommand(CanExecute = nameof(CanRemoveCameraFilesFromBackup))]
+        private async Task RemoveCameraFilesFromBackupAsync()
         {
-            StatusMessage = "Error: Please select a target installation";
-            return;
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                StatusMessage = "Error: Please select a backup first";
+                return;
+            }
+
+            try
+            {
+                StatusMessage = "Removing Camera files from backup...";
+                string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup);
+                string cameraBackupPath = Path.Combine(backupPath, "Device", "Camera");
+
+                if (!Directory.Exists(cameraBackupPath))
+                {
+                    StatusMessage = "No Camera files found in backup";
+                    return;
+                }
+
+                string[] excludedExtensions = [".dll", ".json", ".py"];
+                int deletedCount = 0;
+
+                await Task.Run(() =>
+                {
+                    foreach (string file in Directory.GetFiles(cameraBackupPath, "*", SearchOption.AllDirectories))
+                    {
+                        string extension = Path.GetExtension(file).ToLowerInvariant();
+                        if (!excludedExtensions.Contains(extension))
+                        {
+                            File.Delete(file);
+                            deletedCount++;
+                        }
+                    }
+
+                    // Clean up empty directories
+                    CleanupEmptyDirectories(cameraBackupPath);
+                });
+
+                UpdateBackupInfo();
+                NotifyRemoveCommandsCanExecuteChanged();
+                StatusMessage = $"Removed {deletedCount} Camera files from backup";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error removing Camera files from backup: {ex.Message}";
+            }
         }
 
-        try
+        [RelayCommand(CanExecute = nameof(CanRemoveProgramFilesFromBackup))]
+        private async Task RemoveProgramFilesFromBackupAsync()
         {
-            StatusMessage = $"Copying {fileType} to destination...";
+            await RemoveFeatureFolderFromBackupAsync("Program", "Program");
+        }
+
+        [RelayCommand(CanExecute = nameof(CanRemoveInspectionFilesFromBackup))]
+        private async Task RemoveInspectionFilesFromBackupAsync()
+        {
+            await RemoveFeatureFolderFromBackupAsync("Inspection", "Inspection");
+        }
+
+        private async Task RemoveFeatureFolderFromBackupAsync(string folderName, string displayName)
+        {
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                StatusMessage = "Error: Please select a backup first";
+                return;
+            }
+
+            try
+            {
+                StatusMessage = $"Removing {displayName} files from backup...";
+                string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup);
+                string featureBackupPath = Path.Combine(backupPath, "Feature", folderName);
+
+                if (!Directory.Exists(featureBackupPath))
+                {
+                    StatusMessage = $"No {displayName} files found in backup";
+                    return;
+                }
+
+                int deletedCount = 0;
+
+                await Task.Run(() =>
+                {
+                    foreach (string file in Directory.GetFiles(featureBackupPath, "*", SearchOption.AllDirectories))
+                    {
+                        File.Delete(file);
+                        deletedCount++;
+                    }
+
+                    // Clean up empty directories
+                    CleanupEmptyDirectories(featureBackupPath);
+                });
+
+                UpdateBackupInfo();
+                NotifyRemoveCommandsCanExecuteChanged();
+                StatusMessage = $"Removed {deletedCount} {displayName} files from backup";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error removing {displayName} files from backup: {ex.Message}";
+            }
+        }
+
+        private bool CanRemoveJsonFromBackup() => BackupHasFilesOfPattern("*.json");
+        private bool CanRemoveRetentionFromBackup() => BackupHasFilesOfPattern("*.retention");
+        private bool CanRemovePythonFromBackup() => BackupHasFilesOfPattern("*.py");
+        private bool CanRemoveDllsFromBackup() => BackupHasFilesOfPattern("*.DLL");
+        private bool CanRemoveStubsFromBackup() => BackupHasFilesOfPattern("*.stub");
+        private bool CanRemoveCameraFilesFromBackup() => BackupHasCameraFiles();
+        private bool CanRemoveProgramFilesFromBackup() => BackupHasFeatureFolder("Program");
+        private bool CanRemoveInspectionFilesFromBackup() => BackupHasFeatureFolder("Inspection");
+
+        private bool BackupHasFilesOfPattern(string pattern)
+        {
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                return false;
+            }
+
             string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup);
 
             if (!Directory.Exists(backupPath))
             {
-                StatusMessage = $"Error: Backup folder does not exist";
+                return false;
+            }
+
+            try
+            {
+                return Directory.GetFiles(backupPath, pattern, SearchOption.AllDirectories).Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool BackupHasCameraFiles()
+        {
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                return false;
+            }
+
+            string cameraBackupPath = Path.Combine(_backupsRootDirectory, SelectedBackup, "Device", "Camera");
+
+            if (!Directory.Exists(cameraBackupPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                string[] excludedExtensions = [".dll", ".json", ".py"];
+                return Directory.GetFiles(cameraBackupPath, "*", SearchOption.AllDirectories)
+                    .Any(f => !excludedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool BackupHasFeatureFolder(string folderName)
+        {
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                return false;
+            }
+
+            string featureBackupPath = Path.Combine(_backupsRootDirectory, SelectedBackup, "Feature", folderName);
+
+            if (!Directory.Exists(featureBackupPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                return Directory.GetFiles(featureBackupPath, "*", SearchOption.AllDirectories).Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task RemoveFromBackupByPatternAsync(string pattern, string fileType)
+        {
+            if (string.IsNullOrEmpty(SelectedBackup))
+            {
+                StatusMessage = "Error: Please select a backup first";
                 return;
             }
 
-            CopyFilesByPattern(backupPath, SelectedInstallation.Path, pattern);
-            StatusMessage = $"{fileType} copied to destination";
+            try
+            {
+                StatusMessage = $"Removing {fileType} from backup...";
+                string backupPath = Path.Combine(_backupsRootDirectory, SelectedBackup);
+
+                if (!Directory.Exists(backupPath))
+                {
+                    StatusMessage = "Error: Backup folder does not exist";
+                    return;
+                }
+
+                int deletedCount = 0;
+                await Task.Run(() =>
+                {
+                    foreach (string file in Directory.GetFiles(backupPath, pattern, SearchOption.AllDirectories))
+                    {
+                        File.Delete(file);
+                        deletedCount++;
+                    }
+
+                    // Clean up empty directories
+                    CleanupEmptyDirectories(backupPath);
+                });
+
+                UpdateBackupInfo();
+                NotifyRemoveCommandsCanExecuteChanged();
+                StatusMessage = $"Removed {deletedCount} {fileType} files from backup";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error removing {fileType} from backup: {ex.Message}";
+            }
         }
-        catch (Exception ex)
+
+        private static void CleanupEmptyDirectories(string rootPath)
         {
-            StatusMessage = $"Error copying {fileType}: {ex.Message}";
+            if (!Directory.Exists(rootPath))
+            {
+                return;
+            }
+
+            foreach (string dir in Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
+                .OrderByDescending(d => d.Length))
+            {
+                try
+                {
+                    if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                    {
+                        Directory.Delete(dir);
+                    }
+                }
+                catch
+                {
+                    // Ignore errors when cleaning up empty directories
+                }
+            }
         }
-    }
 
-    #endregion
+        private void NotifyRemoveCommandsCanExecuteChanged()
+        {
+            RemoveJsonFromBackupCommand.NotifyCanExecuteChanged();
+            RemoveRetentionFromBackupCommand.NotifyCanExecuteChanged();
+            RemovePythonFromBackupCommand.NotifyCanExecuteChanged();
+            RemoveDllsFromBackupCommand.NotifyCanExecuteChanged();
+            RemoveStubsFromBackupCommand.NotifyCanExecuteChanged();
+            RemoveCameraFilesFromBackupCommand.NotifyCanExecuteChanged();
+            RemoveProgramFilesFromBackupCommand.NotifyCanExecuteChanged();
+            RemoveInspectionFilesFromBackupCommand.NotifyCanExecuteChanged();
+        }
 
-    private void BackupFilesByPattern(string pattern, string fileType)
+        #endregion
+
+    private async Task BackupFilesByPatternAsync(string pattern, string fileType)
     {
         if (!ValidateBackupSelected())
         {
@@ -1102,10 +1564,14 @@ public sealed partial class MainViewModel : ObservableObject
                 Directory.CreateDirectory(backupPath);
             }
 
-            CopyDirectoryStructure(SelectedInstallation!.Path, backupPath);
-            CopyFilesByPattern(SelectedInstallation.Path, backupPath, pattern);
+            await Task.Run(() =>
+            {
+                CopyDirectoryStructure(SelectedInstallation!.Path, backupPath);
+                CopyFilesByPattern(SelectedInstallation.Path, backupPath, pattern);
+            });
 
             UpdateBackupInfo();
+            NotifyRemoveCommandsCanExecuteChanged();
             StatusMessage = $"{fileType} backup complete";
         }
         catch (Exception ex)
@@ -1114,8 +1580,37 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Determines whether backup or copy-to-destination operations can execute.
+    /// </summary>
+    private bool CanBackupOrCopy() => !string.IsNullOrEmpty(SelectedBackup) && SelectedInstallation is not null;
+
+    /// <summary>
+    /// Notifies all backup and copy-to-destination commands to re-evaluate their CanExecute state.
+    /// </summary>
+    private void NotifyBackupAndCopyCommandsCanExecuteChanged()
+    {
+        BackupAllFilesCommand.NotifyCanExecuteChanged();
+        BackupJsonCommand.NotifyCanExecuteChanged();
+        BackupRetentionCommand.NotifyCanExecuteChanged();
+        BackupPythonCommand.NotifyCanExecuteChanged();
+        BackupDllsCommand.NotifyCanExecuteChanged();
+        BackupStubsCommand.NotifyCanExecuteChanged();
+        BackupCameraFilesCommand.NotifyCanExecuteChanged();
+        BackupProgramFilesCommand.NotifyCanExecuteChanged();
+        BackupInspectionFilesCommand.NotifyCanExecuteChanged();
+        CopyJsonToDestinationCommand.NotifyCanExecuteChanged();
+        CopyRetentionToDestinationCommand.NotifyCanExecuteChanged();
+        CopyPythonToDestinationCommand.NotifyCanExecuteChanged();
+        CopyDllsToDestinationCommand.NotifyCanExecuteChanged();
+        CopyStubsToDestinationCommand.NotifyCanExecuteChanged();
+        CopyCameraFilesToDestinationCommand.NotifyCanExecuteChanged();
+        CopyProgramFilesToDestinationCommand.NotifyCanExecuteChanged();
+        CopyInspectionFilesToDestinationCommand.NotifyCanExecuteChanged();
+    }
+
     [RelayCommand]
-    private void RestoreBackup()
+    private async Task RestoreBackupAsync()
     {
         if (string.IsNullOrEmpty(SelectedBackup))
         {
@@ -1141,7 +1636,7 @@ public sealed partial class MainViewModel : ObservableObject
                 return;
             }
 
-            CopyDirectoryRecursive(backupPath, SelectedInstallation.Path);
+            await CopyDirectoryRecursiveAsync(backupPath, SelectedInstallation.Path);
             StatusMessage = "Restore complete";
         }
         catch (Exception ex)
@@ -1172,7 +1667,7 @@ public sealed partial class MainViewModel : ObservableObject
     #region Cleanup Operations
 
         [RelayCommand]
-        private void DeleteAll()
+        private async Task DeleteAllAsync()
         {
             if (SelectedInstallation is null)
             {
@@ -1187,14 +1682,17 @@ public sealed partial class MainViewModel : ObservableObject
                 string[] patterns = ["*.json", "*.retention", "*.py", "*.stub"];
                 int totalCount = 0;
 
-                foreach (var pattern in patterns)
+                await Task.Run(() =>
                 {
-                    foreach (string file in Directory.GetFiles(SelectedInstallation.Path, pattern, SearchOption.AllDirectories))
+                    foreach (var pattern in patterns)
                     {
-                        File.Delete(file);
-                        totalCount++;
+                        foreach (string file in Directory.GetFiles(SelectedInstallation.Path, pattern, SearchOption.AllDirectories))
+                        {
+                            File.Delete(file);
+                            totalCount++;
+                        }
                     }
-                }
+                });
 
                 StatusMessage = $"All data files deletion complete ({totalCount} files)";
             }
@@ -1205,18 +1703,18 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         [RelayCommand]
-        private void DeleteJson() => DeleteFilesByPattern("*.json", "JSON");
+        private async Task DeleteJsonAsync() => await DeleteFilesByPatternAsync("*.json", "JSON");
 
         [RelayCommand]
-        private void DeleteRetention() => DeleteFilesByPattern("*.retention", "Retention");
+        private async Task DeleteRetentionAsync() => await DeleteFilesByPatternAsync("*.retention", "Retention");
 
         [RelayCommand]
-        private void DeletePython() => DeleteFilesByPattern("*.py", "Python");
+        private async Task DeletePythonAsync() => await DeleteFilesByPatternAsync("*.py", "Python");
 
         [RelayCommand]
-        private void DeletePageStubs() => DeleteFilesByPattern("*.stub", "Page Stubs");
+        private async Task DeletePageStubsAsync() => await DeleteFilesByPatternAsync("*.stub", "Page Stubs");
 
-    private void DeleteFilesByPattern(string pattern, string fileType)
+    private async Task DeleteFilesByPatternAsync(string pattern, string fileType)
     {
         if (SelectedInstallation is null)
         {
@@ -1229,11 +1727,14 @@ public sealed partial class MainViewModel : ObservableObject
             StatusMessage = $"Deleting {fileType}...";
 
             int count = 0;
-            foreach (string file in Directory.GetFiles(SelectedInstallation.Path, pattern, SearchOption.AllDirectories))
+            await Task.Run(() =>
             {
-                File.Delete(file);
-                count++;
-            }
+                foreach (string file in Directory.GetFiles(SelectedInstallation.Path, pattern, SearchOption.AllDirectories))
+                {
+                    File.Delete(file);
+                    count++;
+                }
+            });
 
             StatusMessage = $"{fileType} deletion complete ({count} files)";
         }
@@ -1536,6 +2037,11 @@ public sealed partial class MainViewModel : ObservableObject
     {
         foreach (string dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
         {
+            if (dir.Substring(sourceDir.Length).StartsWith("\\lib"))
+            {
+                continue;
+            }
+
             string relativePath = Path.GetRelativePath(sourceDir, dir);
             string newDir = Path.Combine(targetDir, relativePath);
             Directory.CreateDirectory(newDir);
@@ -1555,8 +2061,18 @@ public sealed partial class MainViewModel : ObservableObject
                 Directory.CreateDirectory(targetFileDir);
             }
 
+            if (targetFileDir?.Substring(sourceDir.Length).StartsWith("\\lib") == true)
+            {
+                continue;
+            }
+
             File.Copy(file, targetFile, true);
         }
+    }
+
+    private static Task CopyFilesByPatternAsync(string sourceDir, string targetDir, string pattern)
+    {
+        return Task.Run(() => CopyFilesByPattern(sourceDir, targetDir, pattern));
     }
 
     private static void CopyDirectoryRecursive(string sourceDir, string targetDir)
@@ -1574,6 +2090,11 @@ public sealed partial class MainViewModel : ObservableObject
 
             File.Copy(file, targetFile, true);
         }
+    }
+
+    private static Task CopyDirectoryRecursiveAsync(string sourceDir, string targetDir)
+    {
+        return Task.Run(() => CopyDirectoryRecursive(sourceDir, targetDir));
     }
 
     #endregion

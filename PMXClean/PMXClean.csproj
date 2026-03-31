@@ -8,7 +8,6 @@
     <UseWPF>true</UseWPF>
 
     <!-- Single File Publishing Configuration -->
-    <!-- Note: WinMerge files will remain external even in single-file mode -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -19,20 +18,6 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="MaterialDesignThemes" Version="5.3.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="WinMergePortable\Data\" />
-  </ItemGroup>
-
-  <!-- Copy WinMerge files to publish output (excluded from single-file embedding) -->
-  <ItemGroup>
-    <Content Include="WinMergePortable\**\*.*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-      <Link>WinMergePortable\%(RecursiveDir)%(Filename)%(Extension)</Link>
-    </Content>
   </ItemGroup>
 
   <!-- Embed PMXVersions Python files as resources -->
