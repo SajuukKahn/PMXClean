@@ -10,35 +10,34 @@ using CommunityToolkit.Mvvm.Input;
 public sealed partial class ComparisonItem : ObservableObject
 {
     [ObservableProperty]
-    private string _name = string.Empty;
+    public partial string Name { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _relativePath = string.Empty;
+    public partial string RelativePath { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string? _leftFullPath;
+    public partial string? LeftFullPath { get; set; }
 
     [ObservableProperty]
-    private string? _rightFullPath;
+    public partial string? RightFullPath { get; set; }
 
     [ObservableProperty]
-    private bool _isFolder;
+    public partial bool IsFolder { get; set; }
 
     [ObservableProperty]
-    private bool _isExpanded;
+    public partial bool IsExpanded { get; set; }
 
     [ObservableProperty]
-    private bool _isSelected;
+    public partial bool IsSelected { get; set; }
 
     [ObservableProperty]
-    private FileComparisonStatus _status = FileComparisonStatus.Same;
+    public partial FileComparisonStatus Status { get; set; } = FileComparisonStatus.Same;
 
     [ObservableProperty]
-    private bool _isLocked;
+    public partial bool IsLocked { get; set; }
 
     [ObservableProperty]
-    private bool _isLockedRight;
-
+    public partial bool IsLockedRight { get; set; }
     public ObservableCollection<ComparisonItem> Children { get; } = [];
 
     /// <summary>

@@ -36,98 +36,98 @@ public sealed partial class MainViewModel : ObservableObject
     #region Observable Properties
 
     [ObservableProperty]
-    private string _statusMessage = "Ready";
+    public partial string StatusMessage { get; set; } = "Ready";
 
     [ObservableProperty]
-    private string _fileVersionText = string.Empty;
+    public partial string FileVersionText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _versionInfoText = string.Empty;
+    public partial string VersionInfoText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _backupInfoText = "No backup selected. Create a new backup to begin.";
+    public partial string BackupInfoText { get; set; } = "No backup selected. Create a new backup to begin.";
 
     [ObservableProperty]
-    private string _utilityOutput = string.Empty;
+    public partial string UtilityOutput { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _networkUtilityOutput = string.Empty;
+    public partial string NetworkUtilityOutput { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private PathMasterXInstallation? _selectedInstallation;
+    public partial PathMasterXInstallation? SelectedInstallation { get; set; }
 
     [ObservableProperty]
-    private string? _selectedVersion;
+    public partial string? SelectedVersion { get; set; }
 
     [ObservableProperty]
-    private string? _selectedBackup;
+    public partial string? SelectedBackup { get; set; }
 
     [ObservableProperty]
-    private bool _isBackupRenaming;
+    public partial bool IsBackupRenaming { get; set; }
 
     [ObservableProperty]
-    private bool _isBackupCreating;
+    public partial bool IsBackupCreating { get; set; }
 
     [ObservableProperty]
-    private string _backupEditName = string.Empty;
+    public partial string BackupEditName { get; set; } = string.Empty;
 
     // PMX Launcher properties
     [ObservableProperty]
-    private bool _offlineMode;
+    public partial bool OfflineMode { get; set; }
 
     [ObservableProperty]
-    private bool _autoAdvance;
+    public partial bool AutoAdvance { get; set; }
 
     [ObservableProperty]
-    private bool _softwareRendering;
+    public partial bool SoftwareRendering { get; set; }
 
     [ObservableProperty]
-    private bool _freeWindow;
+    public partial bool FreeWindow { get; set; }
 
     [ObservableProperty]
-    private string _startPage = string.Empty;
+    public partial string StartPage { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _windowWidth = string.Empty;
+    public partial string WindowWidth { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _windowHeight = string.Empty;
+    public partial string WindowHeight { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _windowX = string.Empty;
+    public partial string WindowX { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _windowY = string.Empty;
+    public partial string WindowY { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private bool _visionDebug;
+    public partial bool VisionDebug { get; set; }
 
     [ObservableProperty]
-    private bool _visionTrace;
+    public partial bool VisionTrace { get; set; }
 
     [ObservableProperty]
-    private bool _recordOnStartup;
+    public partial bool RecordOnStartup { get; set; }
 
     [ObservableProperty]
-    private bool _recordHighQuality;
+    public partial bool RecordHighQuality { get; set; }
 
     [ObservableProperty]
-    private bool _recordHighFramerate;
+    public partial bool RecordHighFramerate { get; set; }
 
     [ObservableProperty]
-    private bool _recordMicrophone;
+    public partial bool RecordMicrophone { get; set; }
 
     [ObservableProperty]
-    private bool _recordWebcam;
+    public partial bool RecordWebcam { get; set; }
 
     [ObservableProperty]
-    private string _maxSegments = string.Empty;
+    public partial string MaxSegments { get; set; } = string.Empty;
 
     #endregion
 
     #region Collections
 
-        public ObservableCollection<PathMasterXInstallation> Installations { get; }
+    public ObservableCollection<PathMasterXInstallation> Installations { get; }
         public ObservableCollection<string> AvailableVersions { get; }
         public ObservableCollection<string> BackupInstances { get; }
         public ObservableCollection<LargeFileResult> LargeFiles { get; } = [];
@@ -550,12 +550,7 @@ public sealed partial class MainViewModel : ObservableObject
             var matchedVersion = AvailableVersions.FirstOrDefault(v =>
                 v.Equals(fileVersion, StringComparison.OrdinalIgnoreCase));
 
-            if (matchedVersion is null)
-            {
-                matchedVersion = AvailableVersions.FirstOrDefault(v =>
-                    fileVersion.StartsWith(v, StringComparison.OrdinalIgnoreCase) ||
-                    v.StartsWith(fileVersion, StringComparison.OrdinalIgnoreCase));
-            }
+            matchedVersion ??= AvailableVersions.FirstOrDefault(v => fileVersion.StartsWith(v, StringComparison.OrdinalIgnoreCase) || v.StartsWith(fileVersion, StringComparison.OrdinalIgnoreCase));
 
             if (matchedVersion is not null)
             {
@@ -2037,7 +2032,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         foreach (string dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories))
         {
-            if (dir.Substring(sourceDir.Length).StartsWith("\\lib"))
+            if (dir[sourceDir.Length..].StartsWith("\\lib"))
             {
                 continue;
             }
@@ -2056,14 +2051,14 @@ public sealed partial class MainViewModel : ObservableObject
             string targetFile = Path.Combine(targetDir, relativePath);
 
             string? targetFileDir = Path.GetDirectoryName(targetFile);
+            if (targetFileDir?[sourceDir.Length..].StartsWith("\\lib") == true)
+            {
+                continue;
+            }
+
             if (targetFileDir is not null && !Directory.Exists(targetFileDir))
             {
                 Directory.CreateDirectory(targetFileDir);
-            }
-
-            if (targetFileDir?.Substring(sourceDir.Length).StartsWith("\\lib") == true)
-            {
-                continue;
             }
 
             File.Copy(file, targetFile, true);

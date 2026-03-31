@@ -3,6 +3,7 @@
     x:Class="PMXClean.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:behaviors="clr-namespace:PMXClean.Behaviors"
     xmlns:converters="clr-namespace:PMXClean.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="clr-namespace:PMXClean"
@@ -244,7 +245,7 @@
                                     x:Name="ComparisonTreeView"
                                     Grid.Row="1"
                                     ItemsSource="{Binding ComparisonViewModel.ComparisonItems}"
-                                    VirtualizingStackPanel.IsVirtualizing="True">
+                                    VirtualizingStackPanel.IsVirtualizing="False">
                                     <TreeView.ItemContainerStyle>
                                         <Style BasedOn="{StaticResource MaterialDesignTreeViewItem}" TargetType="TreeViewItem">
                                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
@@ -634,6 +635,7 @@
                                         <TextBox
                                             Margin="0,0,8,0"
                                             VerticalAlignment="Top"
+                                            behaviors:FocusSelectAllBehavior.IsFocused="{Binding IsBackupRenaming}"
                                             materialDesign:HintAssist.Hint="Backup Name"
                                             materialDesign:HintAssist.IsFloating="True"
                                             Text="{Binding BackupEditName, UpdateSourceTrigger=PropertyChanged}">
@@ -1118,8 +1120,8 @@
                                 MinHeight="200"
                                 VerticalContentAlignment="Top"
                                 AcceptsReturn="True"
-                                BorderThickness="0"
                                 FontFamily="Cascadia Code, Consolas, Courier New"
+                                FontSize="12"
                                 IsReadOnly="True"
                                 Style="{StaticResource MaterialDesignTextBox}"
                                 Text="{Binding NetworkUtilityOutput, Mode=OneWay}"

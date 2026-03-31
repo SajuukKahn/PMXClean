@@ -8,41 +8,32 @@ using CommunityToolkit.Mvvm.Input;
 /// <summary>
 /// Represents a large file found during the file search operation.
 /// </summary>
-public sealed partial class LargeFileResult : ObservableObject
+public sealed partial class LargeFileResult(string fullPath, long sizeBytes) : ObservableObject
 {
-    public LargeFileResult(string fullPath, long sizeBytes)
-    {
-        FullPath = fullPath;
-        FileName = Path.GetFileName(fullPath);
-        DirectoryPath = Path.GetDirectoryName(fullPath) ?? string.Empty;
-        SizeBytes = sizeBytes;
-        SizeFormatted = FormatFileSize(sizeBytes);
-    }
-
     /// <summary>
     /// Gets the file name without path.
     /// </summary>
-    public string FileName { get; }
+    public string FileName { get; } = Path.GetFileName(fullPath);
 
     /// <summary>
     /// Gets the full path to the file.
     /// </summary>
-    public string FullPath { get; }
+    public string FullPath { get; } = fullPath;
 
     /// <summary>
     /// Gets the directory containing the file.
     /// </summary>
-    public string DirectoryPath { get; }
+    public string DirectoryPath { get; } = Path.GetDirectoryName(fullPath) ?? string.Empty;
 
     /// <summary>
     /// Gets the file size in bytes.
     /// </summary>
-    public long SizeBytes { get; }
+    public long SizeBytes { get; } = sizeBytes;
 
     /// <summary>
     /// Gets the formatted file size (e.g., "250 MB").
     /// </summary>
-    public string SizeFormatted { get; }
+    public string SizeFormatted { get; } = FormatFileSize(sizeBytes);
 
     /// <summary>
     /// Opens File Explorer to the folder containing this file.

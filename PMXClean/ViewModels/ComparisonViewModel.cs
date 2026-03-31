@@ -12,52 +12,50 @@ using PMXClean.Services;
 /// </summary>
 public sealed partial class ComparisonViewModel : ObservableObject
 {
-    private readonly PythonComparisonService _comparisonService = new();
+    [ObservableProperty]
+    public partial string LeftPath { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _leftPath = string.Empty;
+    public partial string RightPath { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _rightPath = string.Empty;
+    public partial string LeftLabel { get; set; } = "Source";
 
     [ObservableProperty]
-    private string _leftLabel = "Source";
+    public partial string RightLabel { get; set; } = "Target";
 
     [ObservableProperty]
-    private string _rightLabel = "Target";
+    public partial ObservableCollection<ComparisonItem> ComparisonItems { get; set; } = [];
 
     [ObservableProperty]
-    private ObservableCollection<ComparisonItem> _comparisonItems = [];
+    public partial ComparisonItem? SelectedItem { get; set; }
 
     [ObservableProperty]
-    private ComparisonItem? _selectedItem;
+    public partial FileComparisonResult? CurrentFileComparison { get; set; }
 
     [ObservableProperty]
-    private FileComparisonResult? _currentFileComparison;
+    public partial bool IsComparing { get; set; }
 
     [ObservableProperty]
-    private bool _isComparing;
+    public partial string StatusMessage { get; set; } = "Select folders to compare";
 
     [ObservableProperty]
-    private string _statusMessage = "Select folders to compare";
+    public partial int TotalFiles { get; set; }
 
     [ObservableProperty]
-    private int _totalFiles;
+    public partial int DifferentFiles { get; set; }
 
     [ObservableProperty]
-    private int _differentFiles;
+    public partial int SameFiles { get; set; }
 
     [ObservableProperty]
-    private int _sameFiles;
+    public partial int LeftOnlyFiles { get; set; }
 
     [ObservableProperty]
-    private int _leftOnlyFiles;
+    public partial int RightOnlyFiles { get; set; }
 
     [ObservableProperty]
-    private int _rightOnlyFiles;
-
-    [ObservableProperty]
-    private bool _showOnlyDifferences;
+    public partial bool ShowOnlyDifferences { get; set; }
 
     partial void OnSelectedItemChanged(ComparisonItem? value)
     {
@@ -68,7 +66,7 @@ public sealed partial class ComparisonViewModel : ObservableObject
         }
 
         // Compare the selected file
-        CurrentFileComparison = _comparisonService.CompareFiles(
+        CurrentFileComparison = PythonComparisonService.CompareFiles(
             value.LeftFullPath,
             value.RightFullPath,
             value.RelativePath);
@@ -111,7 +109,7 @@ public sealed partial class ComparisonViewModel : ObservableObject
 
         try
         {
-            var items = await Task.Run(() => _comparisonService.CompareDirectories(LeftPath, RightPath));
+            var items = await Task.Run(() => PythonComparisonService.CompareDirectories(LeftPath, RightPath));
 
             ComparisonItems = items;
 

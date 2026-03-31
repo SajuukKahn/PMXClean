@@ -1,0 +1,113 @@
+#DisplayName = Calibrate Needle
+#Description = Calibrate the needle of a tool and set its tip offset
+#Icon = DispenseValveCustomIcon
+#Flags = IsTriggerStep
+
+dialog = ""
+settleCounts = new.int(0, 0, 200, 1, 10, "counts")
+settleTime = new.int(50, 0, 2000, 1, 10, "ms")
+
+def __inputs__():
+    #Description = The tool to run needle cal on
+    Inputs.Tool = new.ncaltool(0)
+    
+    #DisplayName = Find Speed
+    #Description = The speed used to find the sensors
+    Inputs.FindSpeed = new.int(100, 10, 10000, 10, 100, "[Unit]/s", Inputs.Tool)
+    
+    #DisplayName = Travel Speed
+    #Description = The speed used to move between sensor locations in the calibration block
+    Inputs.TravelSpeed = new.int(1000, 100, 10000, 100, 1000, "[Unit]/s", Inputs.Tool)
+
+    #Description = The maximum amount of time to spend searching for sensors
+    Inputs.Timeout = new.int(10000, 500, 50000, 10, 100, "ms")
+    
+    #DisplayName = Sensor Finds
+    #Description = The number of times each sensor must be found
+    Inputs.SensorFinds = new.int(1, 1, 10, 1, 1, "")
+
+def __run__():
+    tool = Inputs.Tool
+    if tool is None:
+        __throwexception__(Exceptions.ToolRequired)
+    if not tool.IsOnZAxis() or not tool.IsOffsetTaught():
+        __throwexception__(Exceptions.ToolNeedleCannotBeCalibrated)
+
+    robot = tool.GetRobot()
+    if robot is None:
+        __throwexception__(Exceptions.RobotRequired)
+        return
+
+    x = robot.XAxis
+    if x is None:
+        __throwexception__(Exceptions.AxisRequired, "X")
+        return
+
+    y = robot.YAxis
+    if y is None:
+        __throwexception__(Exceptions.AxisRequired, "Y")
+        return
+
+    z = robot.ZAxis
+    if z is None:
+        __throwexception__(Exceptions.AxisRequired, "Z")
+        return
+
+    global dialog
+    dialog = PVA.Messaging.CreateUniqueDialog(dialog)
+    PVA.Messaging.SetDialogIcon(dialog, "DispenseValveCustomIcon")
+    PVA.Messaging.SetDialogIconColor(dialog, "Yellow")
+    PVA.Messaging.SetDialogTitle(dialog, "#NeedleCalibration.CalibrateNeedle")
+    PVA.Messaging.SetDialogMessage(dialog, "#NeedleCalibration.Calibrating " + tool.GetDisplayName() + " #UI.With " + GetDisplayName() + ". #UI.PleaseWait")
+    PVA.Messaging.SetDialogProgressBarIndeterminate(dialog, True)
+    PVA.Messaging.ShowDialogAsync(dialog)
+    
+    global settleCounts
+    global settleTime
+    Outputs.Running.Value = True
+    results = FindSensor(Inputs.Tool, Inputs.FindSpeed, Inputs.TravelSpeed, Inputs.Timeout, Inputs.SensorFinds, settleCounts, settleTime)
+    if results.Success.Value:
+        xDelta = results.XDelta.Value * x.CountsPerMM.Value
+        yDelta = results.YDelta.Value * y.CountsPerMM.Value
+        zDelta = results.ZDelta.Value * z.CountsPerMM.Value
+        tool.MoveTipOffset(xDelta, yDelta, zDelta)
+
+    Outputs.Running.Value = False
+    PVA.Messaging.CloseDialog(dialog)
+
+def __virtual__():
+    pass
+
+def __outputs__():
+    #Property = True
+    #Description = A value indicating whether the needle calibration is actively running.
+    Outputs.Running = new.bool(False)
+
+def __lockresources__():
+    if Inputs.Tool.GetRobot() is not None:
+        Inputs.Tool.GetRobot().Reserve()
+
+def __releaseresources__():
+    if Inputs.Tool.GetRobot() is not None:
+        Inputs.Tool.GetRobot().Release()
+
+def __exceptions__():
+    Exceptions.ToolRequired = new.exception("#Tool.Exceptions.NoToolTitle", "#Tool.Exceptions.NoTool", new.enum("Severity", "Error").Value, None)
+    Exceptions.ToolNeedleCannotBeCalibrated = new.exception("#Tool.Exceptions.CannotBeCalibratedTitle", "#Tool.Exceptions.CannotBeCalibrated", new.enum("Severity", "Error").Value, None)
+    Exceptions.RobotRequired = new.exception("#Controller.Exceptions.RobotRequiredTitle", "#Controller.Exceptions.RobotRequired", new.enum("Severity", "Error").Value, None)
+    Exceptions.AxisRequired = new.exception("#Controller.Exceptions.AxisRequiredTitle", "#Controller.Exceptions.AxisRequired", new.enum("Severity", "Error").Value, None)
+
+def __throwexception__(exception, name = ""):
+    __exceptionhandling__()
+    exception.ExceptionData.MessageParams = tuple([GetDisplayName(), name])
+    PVA.Exceptions.ThrowException(exception)
+
+def __exceptionhandling__():
+    global dialog
+    Outputs.Running.Value = False
+    PVA.Messaging.CloseDialog(dialog)
+    if Inputs.Tool.GetRobot() is not None:
+        Inputs.Tool.GetRobot().Release()
+
+def __exceptionrecovery__():
+    pass

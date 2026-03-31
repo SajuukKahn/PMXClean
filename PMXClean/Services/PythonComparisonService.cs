@@ -2,20 +2,19 @@ namespace PMXClean.Services;
 
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Text;
 using PMXClean.Models;
 
 /// <summary>
 /// Service for comparing Python files and folders using LCS-based diff algorithm.
 /// </summary>
-public sealed class PythonComparisonService
+public static class PythonComparisonService
 {
     private const string LockPattern = "#lock";
 
     /// <summary>
     /// Compares two folders and builds a tree of comparison items for Python files.
     /// </summary>
-    public ObservableCollection<ComparisonItem> CompareDirectories(string leftPath, string rightPath)
+    public static ObservableCollection<ComparisonItem> CompareDirectories(string leftPath, string rightPath)
     {
         var result = new ObservableCollection<ComparisonItem>();
 
@@ -28,7 +27,7 @@ public sealed class PythonComparisonService
         return result;
     }
 
-    private void BuildComparisonTree(string leftBasePath, string rightBasePath, string relativePath, 
+    private static void BuildComparisonTree(string leftBasePath, string rightBasePath, string relativePath, 
         ObservableCollection<ComparisonItem> items)
     {
         string leftDir = string.IsNullOrEmpty(relativePath) ? leftBasePath : Path.Combine(leftBasePath, relativePath);
@@ -129,6 +128,7 @@ public sealed class PythonComparisonService
             {
                 fileItem.IsLocked = IsFileLocked(leftFilePath);
             }
+
             if (rightFilePath is not null)
             {
                 fileItem.IsLockedRight = IsFileLocked(rightFilePath);
@@ -191,7 +191,7 @@ public sealed class PythonComparisonService
     /// <summary>
     /// Compares two files and generates a detailed diff result.
     /// </summary>
-    public FileComparisonResult CompareFiles(string? leftPath, string? rightPath, string relativePath)
+    public static FileComparisonResult CompareFiles(string? leftPath, string? rightPath, string relativePath)
     {
         var result = new FileComparisonResult
         {
@@ -209,6 +209,7 @@ public sealed class PythonComparisonService
         {
             leftLines = File.ReadAllLines(leftPath!);
         }
+
         if (rightExists)
         {
             rightLines = File.ReadAllLines(rightPath!);
