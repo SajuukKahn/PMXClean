@@ -12,6 +12,11 @@ using PMXClean.Services;
 /// </summary>
 public sealed partial class ComparisonViewModel : ObservableObject
 {
+    /// <summary>
+    /// Action to invoke when a comparison is started.
+    /// </summary>
+    public Action? OnComparisonStarted { get; set; }
+
     [ObservableProperty]
     public partial string LeftPath { get; set; } = string.Empty;
 
@@ -106,6 +111,9 @@ public sealed partial class ComparisonViewModel : ObservableObject
         StatusMessage = "Comparing folders...";
         CurrentFileComparison = null;
         SelectedItem = null;
+
+        // Notify that comparison has started
+        OnComparisonStarted?.Invoke();
 
         try
         {

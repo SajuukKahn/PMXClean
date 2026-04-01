@@ -1,6 +1,7 @@
 namespace PMXClean.ViewModels;
 
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.NetworkInformation;
@@ -29,6 +30,11 @@ public sealed partial class MainViewModel : ObservableObject
         Installations = [];
         AvailableVersions = [];
         BackupInstances = [];
+
+        ComparisonViewModel = new ComparisonViewModel
+        {
+            OnComparisonStarted = () => IsComparisonVisible = true
+        };
 
         Initialize();
     }
@@ -123,6 +129,18 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial string MaxSegments { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    public partial int LockedFileCount { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsComparisonVisible { get; set; }
+
+    [ObservableProperty]
+    public partial LockedFileItem? SelectedLockedFile { get; set; }
+
+    [ObservableProperty]
+    public partial string SelectedLockedFileContent { get; set; } = string.Empty;
+
     #endregion
 
     #region Collections
@@ -131,11 +149,13 @@ public sealed partial class MainViewModel : ObservableObject
         public ObservableCollection<string> AvailableVersions { get; }
         public ObservableCollection<string> BackupInstances { get; }
         public ObservableCollection<LargeFileResult> LargeFiles { get; } = [];
+        public ObservableCollection<LockedFileItem> LockedFiles { get; } = [];
+        public ObservableCollection<PageInfo> AvailablePages { get; } = [];
 
         /// <summary>
         /// ViewModel for the built-in Python comparison feature.
         /// </summary>
-        public ComparisonViewModel ComparisonViewModel { get; } = new();
+        public ComparisonViewModel ComparisonViewModel { get; }
 
         #endregion
 
@@ -147,7 +167,17 @@ public sealed partial class MainViewModel : ObservableObject
         {
             StatusMessage = $"Selected: {value.DisplayName}";
             UpdateFileVersionDisplay();
+            LoadAvailablePages();
+            ScanForLockedFiles();
         }
+        else
+        {
+            LockedFileCount = 0;
+        }
+
+        // Clear locked file selection when target changes
+        SelectedLockedFile = null;
+        SelectedLockedFileContent = string.Empty;
 
         NotifyBackupAndCopyCommandsCanExecuteChanged();
         SetupComparisonPaths();
@@ -618,6 +648,332 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         return count;
+    }
+
+    #endregion
+
+    #region Page Discovery
+
+    /// <summary>
+    /// Scans the selected installation's Base\UI\Pages\ directory for *.stub files
+    /// and builds a collection of available pages with their UI paths.
+    /// </summary>
+    private void LoadAvailablePages()
+    {
+        AvailablePages.Clear();
+
+        if (SelectedInstallation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            string pagesPath = Path.Combine(SelectedInstallation.Path, "Base", "UI", "Pages");
+
+            if (!Directory.Exists(pagesPath))
+            {
+                Debug.WriteLine($"Pages directory not found: {pagesPath}");
+                return;
+            }
+
+            var stubFiles = Directory.GetFiles(pagesPath, "*.stub", SearchOption.AllDirectories);
+
+            foreach (var stubFile in stubFiles)
+            {
+                try
+                {
+                    // Get the relative path from the Pages directory
+                    string relativePath = Path.GetRelativePath(pagesPath, stubFile);
+
+                    // Remove the .stub extension
+                    string pathWithoutExtension = relativePath[.. ^Path.GetFileName(relativePath).Length]; // Remove ".stub"
+
+                    // Get just the filename without extension for the name
+                    string name = Path.GetFileNameWithoutExtension(stubFile);
+
+                    // The UI path is the relative path with backslashes, without the extension
+                    string uiPath = pathWithoutExtension.Replace(Path.DirectorySeparatorChar, '\\');
+
+                    AvailablePages.Add(new PageInfo
+                    {
+                        Name = name,
+                        UIPath = uiPath
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error processing stub file {stubFile}: {ex.Message}");
+                }
+            }
+
+            // Sort by UI path for easier navigation
+            var sortedPages = AvailablePages.OrderBy(p => p.UIPath).ToList();
+            AvailablePages.Clear();
+            foreach (var page in sortedPages)
+            {
+                AvailablePages.Add(page);
+            }
+
+            Debug.WriteLine($"Loaded {AvailablePages.Count} page(s) from {pagesPath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error loading available pages: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Selects a page from the available pages and sets it as the StartPage.
+    /// </summary>
+    [RelayCommand]
+    private void SelectPage(PageInfo? page)
+    {
+        if (page is not null)
+        {
+            StartPage = page.Name;
+            StatusMessage = $"Selected startup page: {page.UIPath}{page.Name}";
+        }
+    }
+
+    #endregion
+
+    #region Locked File Detection
+
+    /// <summary>
+    /// Scans the selected installation for Python files with #lock in the first line
+    /// and builds a hierarchical tree structure.
+    /// </summary>
+    private void ScanForLockedFiles()
+    {
+        LockedFiles.Clear();
+        LockedFileCount = 0;
+
+        if (SelectedInstallation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var pythonFiles = Directory.GetFiles(SelectedInstallation.Path, "*.py", SearchOption.AllDirectories);
+            var lockedFilePaths = new List<string>();
+
+            foreach (var file in pythonFiles)
+            {
+                try
+                {
+                    // Read only the first line of the file
+                    using var reader = new StreamReader(file);
+                    string? firstLine = reader.ReadLine();
+
+                    if (firstLine is not null && firstLine.Contains("#lock", StringComparison.OrdinalIgnoreCase))
+                    {
+                        lockedFilePaths.Add(file);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error reading file {file}: {ex.Message}");
+                }
+            }
+
+            LockedFileCount = lockedFilePaths.Count;
+
+            // Build tree structure
+            if (lockedFilePaths.Count > 0)
+            {
+                BuildLockedFileTree(lockedFilePaths);
+            }
+
+            Debug.WriteLine($"Found {lockedFilePaths.Count} locked Python file(s) in {SelectedInstallation.Path}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error scanning for locked files: {ex.Message}");
+            LockedFileCount = 0;
+        }
+    }
+
+    /// <summary>
+    /// Builds a hierarchical tree structure from locked file paths.
+    /// </summary>
+    private void BuildLockedFileTree(List<string> filePaths)
+    {
+        var root = new Dictionary<string, LockedFileItem>();
+
+        foreach (var filePath in filePaths)
+        {
+            string relativePath = Path.GetRelativePath(SelectedInstallation!.Path, filePath);
+            string[] parts = relativePath.Split(Path.DirectorySeparatorChar);
+
+            var currentLevel = root;
+            LockedFileItem? currentParent = null;
+            string currentPath = string.Empty;
+
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string part = parts[i];
+                currentPath = string.IsNullOrEmpty(currentPath) ? part : Path.Combine(currentPath, part);
+                bool isFile = i == parts.Length - 1;
+
+                if (!currentLevel.TryGetValue(part, out LockedFileItem? value))
+                {
+                    var item = new LockedFileItem
+                    {
+                        Name = part,
+                        FullPath = isFile ? filePath : Path.Combine(SelectedInstallation.Path, currentPath),
+                        RelativePath = currentPath,
+                        IsFolder = !isFile,
+                        Content = null
+                    };
+                    value = item;
+                    currentLevel[part] = value;
+
+                    if (currentParent is null)
+                    {
+                        LockedFiles.Add(item);
+                    }
+                    else
+                    {
+                        currentParent.Children.Add(item);
+                    }
+                }
+
+                if (!isFile)
+                {
+                    currentParent = value;
+                    // Create a child level if it doesn't exist
+                    var childLevel = new Dictionary<string, LockedFileItem>();
+                    foreach (var child in currentParent.Children)
+                    {
+                        childLevel[child.Name] = child;
+                    }
+
+                    currentLevel = childLevel;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Selects a locked file and loads its content for display.
+    /// </summary>
+    [RelayCommand]
+    private void SelectLockedFile(LockedFileItem? item)
+    {
+        if (item is null || item.IsFolder)
+        {
+            return;
+        }
+
+        SelectedLockedFile = item;
+    }
+
+    /// <summary>
+    /// Handles selection change to load file content.
+    /// </summary>
+    partial void OnSelectedLockedFileChanged(LockedFileItem? value)
+    {
+        if (value is null || value.IsFolder)
+        {
+            SelectedLockedFileContent = string.Empty;
+            return;
+        }
+
+        try
+        {
+            // Load file content
+            SelectedLockedFileContent = File.ReadAllText(value.FullPath);
+        }
+        catch (Exception ex)
+        {
+            SelectedLockedFileContent = $"Error loading file: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Opens the selected locked file in File Explorer and selects it.
+    /// </summary>
+    [RelayCommand]
+    private void OpenLockedFileInExplorer()
+    {
+        if (SelectedLockedFile is null || SelectedLockedFile.IsFolder)
+        {
+            StatusMessage = "Error: No file selected";
+            return;
+        }
+
+        if (!File.Exists(SelectedLockedFile.FullPath))
+        {
+            StatusMessage = "Error: File does not exist";
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{SelectedLockedFile.FullPath}\"",
+                UseShellExecute = true
+            });
+
+            StatusMessage = $"Opened file in Explorer: {SelectedLockedFile.Name}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error opening file in Explorer: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ClearSelectedLockedFile()
+    {
+        SelectedLockedFile = null;
+    }
+
+    /// <summary>
+    /// Closes the comparison view and returns to locked file browser.
+    /// </summary>
+    [RelayCommand]
+    private void CloseComparison()
+    {
+        IsComparisonVisible = false;
+        StatusMessage = "Comparison closed";
+    }
+
+    /// <summary>
+    /// Expands all locked file tree items.
+    /// </summary>
+    [RelayCommand]
+    private void ExpandAllLockedFiles()
+    {
+        SetLockedFilesExpandedState(LockedFiles, true);
+    }
+
+    /// <summary>
+    /// Collapses all locked file tree items.
+    /// </summary>
+    [RelayCommand]
+    private void CollapseAllLockedFiles()
+    {
+        SetLockedFilesExpandedState(LockedFiles, false);
+    }
+
+    /// <summary>
+    /// Recursively sets the expanded state of locked file tree items.
+    /// </summary>
+    private static void SetLockedFilesExpandedState(ObservableCollection<LockedFileItem> items, bool expanded)
+    {
+        foreach (var item in items)
+        {
+            if (item.IsFolder)
+            {
+                item.IsExpanded = expanded;
+                SetLockedFilesExpandedState(item.Children, expanded);
+            }
+        }
     }
 
     #endregion
@@ -1604,7 +1960,7 @@ public sealed partial class MainViewModel : ObservableObject
         CopyInspectionFilesToDestinationCommand.NotifyCanExecuteChanged();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
     private async Task RestoreBackupAsync()
     {
         if (string.IsNullOrEmpty(SelectedBackup))
@@ -1750,45 +2106,21 @@ public sealed partial class MainViewModel : ObservableObject
         {
             StatusMessage = "Checking network settings...";
             NetworkUtilityOutput = string.Empty;
-            await Task.Run(() =>
-            {
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments = @"-ExecutionPolicy Bypass -Command ""Get-NetIPConfiguration | Format-Table -Property 'InterfaceAlias','IPv4Address' | Out-String""",
-                        RedirectStandardOutput = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
 
-                    using var process = Process.Start(psi);
-                    if (process is not null)
-                    {
-                        string result = process.StandardOutput.ReadToEnd();
-                        process.WaitForExit();
-                        NetworkUtilityOutput =  $"{result.TrimStart().TrimEnd()}\n\n";
-                    }
-                }
-                catch (Exception ex)
-                {
-                    NetworkUtilityOutput = $"Error getting network config: {ex.Message}";
-                    return;
-                }
-            });
+            await GetConsolidatedAdapterInfoAsync();
 
-            NetworkUtilityOutput += "Pinging Galil (100.100.100.101)\n";
+            // Ping devices
+            NetworkUtilityOutput += "\nPinging Galil (100.100.100.101)\n";
             bool galilOnline = await PingHostAsync("100.100.100.101");
-            NetworkUtilityOutput += galilOnline ? "    Status: Online" : "    Status: Offline";
+            NetworkUtilityOutput += galilOnline ? "    Status: Online\n" : "    Status: Offline\n";
 
-            NetworkUtilityOutput += "\n\nPinging Modbus I/O (100.100.100.110)\n";
+            NetworkUtilityOutput += "\nPinging Modbus I/O (100.100.100.110)\n";
             bool modbusOnline = await PingHostAsync("100.100.100.110");
-            NetworkUtilityOutput += modbusOnline ? "    Status: Online" : "    Status: Offline";
+            NetworkUtilityOutput += modbusOnline ? "    Status: Online\n" : "    Status: Offline\n";
 
-            NetworkUtilityOutput += "\n\nPinging Camera (200.200.200.201)\n";
+            NetworkUtilityOutput += "\nPinging Camera (200.200.200.201)\n";
             bool cameraOnline = await PingHostAsync("200.200.200.201");
-            NetworkUtilityOutput += cameraOnline ? "    Status: Online" : "    Status: Offline";
+            NetworkUtilityOutput += cameraOnline ? "    Status: Online\n" : "    Status: Offline\n";
 
             StatusMessage = "Network check complete";
         }
@@ -1796,6 +2128,71 @@ public sealed partial class MainViewModel : ObservableObject
         {
             StatusMessage = $"Error: {ex.Message}";
         }
+    }
+
+    private async Task GetConsolidatedAdapterInfoAsync()
+    {
+        await Task.Run(() =>
+        {
+            try
+            {
+                // Single query to get all adapter information at once
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = @"-ExecutionPolicy Bypass -Command ""
+                        $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' };
+                        foreach ($adapter in $adapters) {
+                            Write-Output ('Adapter: ' + $adapter.Name);
+                            Write-Output ('  Status: ' + $adapter.Status);
+
+                            # Get IP configuration
+                            $ipConfig = Get-NetIPConfiguration -InterfaceAlias $adapter.Name -ErrorAction SilentlyContinue;
+                            if ($ipConfig) {
+                                if ($ipConfig.IPv4Address) {
+                                    Write-Output ('  IPv4: ' + $ipConfig.IPv4Address.IPAddress);
+                                }
+                                if ($ipConfig.IPv4DefaultGateway) {
+                                    Write-Output ('  Gateway: ' + $ipConfig.IPv4DefaultGateway.NextHop);
+                                }
+                                if ($ipConfig.DNSServer) {
+                                    $dnsServers = ($ipConfig.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses) -join ', ';
+                                    if ($dnsServers) {
+                                        Write-Output ('  DNS: ' + $dnsServers);
+                                    }
+                                }
+                            }
+
+                            # Get advanced properties (only for Ethernet adapters)
+                            if ($adapter.PhysicalMediaType -like '*802.3*') {
+                                $props = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue;
+
+                                # Jumbo Frames
+                                $jumbo = $props | Where-Object { $_.RegistryKeyword -eq '*JumboPacket' } | Select-Object -ExpandProperty DisplayValue -ErrorAction SilentlyContinue;
+                                if ($jumbo) { Write-Output ('  Jumbo Frames: ' + $jumbo); }
+                            }
+
+                            Write-Output '';
+                        }
+                    """,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is not null)
+                {
+                    string result = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    NetworkUtilityOutput += result.TrimEnd() + "\n";
+                }
+            }
+            catch (Exception ex)
+            {
+                NetworkUtilityOutput += $"Error getting adapter info: {ex.Message}\n";
+            }
+        });
     }
 
     private static async Task<bool> PingHostAsync(string host)

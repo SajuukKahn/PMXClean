@@ -44,6 +44,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <ComboBox
@@ -53,7 +54,30 @@
                     ItemsSource="{Binding Installations}"
                     SelectedItem="{Binding SelectedInstallation}"
                     Style="{StaticResource MaterialDesignFilledComboBox}" />
-                <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+
+                <!--  Locked Files Indicator  -->
+                <Border
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Margin="0,0,48,0"
+                    HorizontalAlignment="Right"
+                    CornerRadius="4"
+                    IsHitTestVisible="False"
+                    Visibility="{Binding LockedFileCount, Converter={x:Static converters:NotZeroToVisibilityConverter.Instance}}">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Foreground="Gold"
+                            Kind="Lock" />
+                        <TextBlock VerticalAlignment="Center" FontWeight="Medium">
+                            <Run Text="Locked Files Detected:" />
+                            <Run FontWeight="Bold" Text="{Binding LockedFileCount, Mode=OneWay}" />
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <WrapPanel Grid.Column="2" VerticalAlignment="Center">
                     <Button
                         Margin="0,0,8,0"
                         Command="{Binding OpenTargetFolderCommand}"
@@ -105,10 +129,12 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
@@ -125,9 +151,8 @@
                                 Style="{StaticResource MaterialDesignFilledComboBox}" />
 
                             <Button
-                                Grid.Row="0"
                                 Grid.Column="1"
-                                Margin="0,0,16,0"
+                                Margin="0,0,8,0"
                                 Command="{Binding AutoMatchVersionCommand}"
                                 Style="{StaticResource MaterialDesignFloatingActionMiniLightButton}"
                                 ToolTip="Auto-select version matching the target installation">
@@ -136,32 +161,32 @@
 
                             <!--  Compare Button  -->
                             <Button
-                                Grid.Row="0"
                                 Grid.Column="2"
-                                Height="40"
-                                Margin="8,0,8,0"
+                                Margin="0,0,8,0"
                                 Command="{Binding ComparisonViewModel.CompareCommand}"
                                 IsEnabled="{Binding SelectedVersion, Converter={x:Static converters:NotNullToBoolConverter.Instance}}"
-                                Style="{StaticResource MaterialDesignRaisedButton}">
-                                <StackPanel Orientation="Horizontal">
-                                    <materialDesign:PackIcon
-                                        Margin="0,0,8,0"
-                                        VerticalAlignment="Center"
-                                        Kind="Compare" />
-                                    <TextBlock VerticalAlignment="Center" Text="Compare Files" />
-                                </StackPanel>
+                                Style="{StaticResource MaterialDesignFloatingActionMiniButton}"
+                                ToolTip="Compare Files">
+                                <materialDesign:PackIcon Kind="Compare" />
                             </Button>
 
-                            <!--  Options  -->
-                            <StackPanel
-                                Grid.Row="0"
+                            <Button
                                 Grid.Column="3"
-                                Orientation="Horizontal">
-                                <CheckBox
-                                    Margin="8,0,0,0"
-                                    Content="Differences Only"
-                                    IsChecked="{Binding ComparisonViewModel.ShowOnlyDifferences}" />
-                            </StackPanel>
+                                Height="40"
+                                Margin="0,0,8,0"
+                                Command="{Binding CloseComparisonCommand}"
+                                IsEnabled="{Binding IsComparisonVisible}"
+                                Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryButton}"
+                                ToolTip="Close comparison and view locked files">
+                                <materialDesign:PackIcon Kind="Close" />
+                            </Button>
+
+                            <CheckBox
+                                Grid.Column="4"
+                                Margin="0,0,8,0"
+                                Content="Differences Only"
+                                IsChecked="{Binding ComparisonViewModel.ShowOnlyDifferences}" />
+
 
                             <!--  Status  -->
                             <TextBlock
@@ -176,7 +201,10 @@
                     </materialDesign:Card>
 
                     <!--  Main Comparison Area  -->
-                    <Grid Grid.Row="1" Margin="8">
+                    <Grid
+                        Grid.Row="1"
+                        Margin="8"
+                        Visibility="{Binding IsComparisonVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="250" />
                             <ColumnDefinition Width="2*" MinWidth="400" />
@@ -283,7 +311,7 @@
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding IsFolder}" Value="True">
                                                                     <Setter Property="Kind" Value="Folder" />
-                                                                    <Setter Property="Foreground" Value="{DynamicResource MaterialDesign.Brush.Primary}" />
+                                                                    <Setter Property="Foreground" Value="Green" />
                                                                 </DataTrigger>
                                                                 <MultiDataTrigger>
                                                                     <MultiDataTrigger.Conditions>
@@ -538,13 +566,239 @@
                         </materialDesign:Card>
                     </Grid>
 
+                    <!--  Locked Files Browser  -->
+                    <Grid
+                        Grid.Row="1"
+                        Margin="8"
+                        Visibility="{Binding IsComparisonVisible, Converter={x:Static converters:InverseBooleanToVisibilityConverter.Instance}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="250" />
+                            <ColumnDefinition Width="2*" MinWidth="400" />
+                        </Grid.ColumnDefinitions>
+
+                        <!--  Locked Files Tree  -->
+                        <materialDesign:Card Grid.Column="0" Margin="0,0,8,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!--  Tree Header  -->
+                                <Border Grid.Row="0" Background="{DynamicResource MaterialDesign.Brush.Primary}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Margin="12,8"
+                                            FontWeight="Medium"
+                                            Foreground="White"
+                                            Text="Locked Python Files" />
+                                        <Button
+                                            Grid.Column="1"
+                                            Height="24"
+                                            Margin="0,4,4,4"
+                                            HorizontalContentAlignment="Center"
+                                            Command="{Binding ExpandAllLockedFilesCommand}"
+                                            Style="{StaticResource MaterialDesignFlatDarkBgButton}"
+                                            ToolTip="Expand all folders">
+                                            <materialDesign:PackIcon Kind="UnfoldMoreHorizontal" />
+                                        </Button>
+                                        <Button
+                                            Grid.Column="2"
+                                            Height="24"
+                                            Margin="4,4,4,4"
+                                            HorizontalContentAlignment="Center"
+                                            Command="{Binding CollapseAllLockedFilesCommand}"
+                                            Style="{StaticResource MaterialDesignFlatDarkBgButton}"
+                                            ToolTip="Collapse all folders">
+                                            <materialDesign:PackIcon Kind="UnfoldLessHorizontal" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <!--  Locked Files Tree View  -->
+                                <TreeView
+                                    x:Name="LockedFilesTreeView"
+                                    Grid.Row="1"
+                                    ItemsSource="{Binding LockedFiles}"
+                                    SelectedItemChanged="LockedFilesTreeView_SelectedItemChanged"
+                                    VirtualizingStackPanel.IsVirtualizing="False">
+                                    <TreeView.ItemContainerStyle>
+                                        <Style BasedOn="{StaticResource MaterialDesignTreeViewItem}" TargetType="TreeViewItem">
+                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+                                        </Style>
+                                    </TreeView.ItemContainerStyle>
+                                    <TreeView.ItemTemplate>
+                                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                            <Grid
+                                                Margin="2"
+                                                Background="Transparent"
+                                                ToolTip="{Binding RelativePath}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <!--  Icon  -->
+                                                <materialDesign:PackIcon
+                                                    Grid.Column="0"
+                                                    Width="18"
+                                                    Height="18"
+                                                    Margin="0,0,4,0"
+                                                    VerticalAlignment="Center">
+                                                    <materialDesign:PackIcon.Style>
+                                                        <Style TargetType="materialDesign:PackIcon">
+                                                            <Setter Property="Kind" Value="LanguagePython" />
+                                                            <Setter Property="Foreground" Value="Gold" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                                    <Setter Property="Kind" Value="Folder" />
+                                                                    <Setter Property="Foreground" Value="Orange" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </materialDesign:PackIcon.Style>
+                                                </materialDesign:PackIcon>
+
+                                                <!--  File/Folder Name  -->
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    VerticalAlignment="Center"
+                                                    Text="{Binding Name}">
+                                                    <TextBlock.Style>
+                                                        <Style BasedOn="{StaticResource MaterialDesignBody2TextBlock}" TargetType="TextBlock">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFolder}" Value="False">
+                                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                        </HierarchicalDataTemplate>
+                                    </TreeView.ItemTemplate>
+                                </TreeView>
+
+                                <!--  Empty State  -->
+                                <StackPanel
+                                    Grid.Row="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding LockedFileCount, Converter={x:Static converters:NotZeroToVisibilityConverter.Instance}, ConverterParameter=True}">
+                                    <materialDesign:PackIcon
+                                        Width="64"
+                                        Height="64"
+                                        HorizontalAlignment="Center"
+                                        Foreground="{DynamicResource MaterialDesign.Brush.Primary}"
+                                        Kind="Lock"
+                                        Opacity="0.3" />
+                                    <TextBlock
+                                        Margin="0,16,0,0"
+                                        HorizontalAlignment="Center"
+                                        Opacity="0.5"
+                                        Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                                        Text="No locked files found" />
+                                </StackPanel>
+                            </Grid>
+                        </materialDesign:Card>
+
+                        <!--  Locked File Content Viewer  -->
+                        <materialDesign:Card Grid.Column="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!--  Content Header  -->
+                                <Border Grid.Row="0" Background="{DynamicResource MaterialDesign.Brush.Primary}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Padding="12,8"
+                                            FontWeight="Medium"
+                                            Foreground="White"
+                                            Text="{Binding SelectedLockedFile.RelativePath, FallbackValue='Select a locked file to view'}" />
+
+                                        <Button
+                                            Grid.Column="1"
+                                            Margin="8,0,0,0"
+                                            Padding="8"
+                                            Command="{Binding ClearSelectedLockedFileCommand}"
+                                            Style="{StaticResource MaterialDesignFlatSecondaryDarkButton}"
+                                            Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
+                                            <materialDesign:PackIcon Kind="Close" />
+                                        </Button>
+
+                                    </Grid>
+                                </Border>
+
+                                <!--  File Content  -->
+                                <Grid Grid.Row="1" Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
+
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                        <TextBlock
+                                            Margin="4"
+                                            FontFamily="Consolas"
+                                            FontSize="12"
+                                            Text="{Binding SelectedLockedFileContent}"
+                                            TextWrapping="WrapWithOverflow" />
+                                    </ScrollViewer>
+                                    <Button
+                                        Margin="8"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Bottom"
+                                        Command="{Binding OpenLockedFileInExplorerCommand}"
+                                        Style="{StaticResource MaterialDesignFloatingActionMiniLightButton}"
+                                        ToolTip="Open file in File Explorer"
+                                        Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
+                                        <materialDesign:PackIcon Kind="FolderOpen" />
+                                    </Button>
+
+                                </Grid>
+                                <!--  Empty State  -->
+                                <StackPanel
+                                    Grid.Row="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NullToVisibilityConverter.Instance}}">
+                                    <materialDesign:PackIcon
+                                        Width="64"
+                                        Height="64"
+                                        HorizontalAlignment="Center"
+                                        Foreground="{DynamicResource MaterialDesign.Brush.Primary}"
+                                        Kind="FileLock"
+                                        Opacity="0.3" />
+                                    <TextBlock
+                                        Margin="0,16,0,0"
+                                        HorizontalAlignment="Center"
+                                        Opacity="0.5"
+                                        Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                                        Text="Select a file to view content" />
+                                </StackPanel>
+                            </Grid>
+                        </materialDesign:Card>
+                    </Grid>
+
                     <!--  Legend  -->
                     <Border
                         Grid.Row="2"
                         Margin="8"
                         Padding="8"
                         Background="{DynamicResource MaterialDesign.Brush.Card.Background}"
-                        CornerRadius="4">
+                        CornerRadius="4"
+                        Visibility="{Binding IsComparisonVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock
                                 Margin="0,0,16,0"
@@ -580,7 +834,7 @@
                                 VerticalAlignment="Center"
                                 Foreground="Gold"
                                 Kind="Lock" />
-                            <TextBlock VerticalAlignment="Center" Text="Locked (#lock)" />
+                            <TextBlock VerticalAlignment="Center" Text="Locked" />
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -604,7 +858,10 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <!--  Backup Instance Selection Card  -->
-                            <materialDesign:Card Margin="0,0,0,0" Padding="16,8,16,4">
+                            <materialDesign:Card
+                                Height="64"
+                                Margin="0,0,0,0"
+                                Padding="16,8,16,8">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="3*" />
@@ -755,7 +1012,7 @@
                                         Command="{Binding RemoveJsonFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove JSON files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
                                 <Grid Grid.Row="2" Margin="8,0,4,8">
@@ -774,7 +1031,7 @@
                                         Command="{Binding RemoveRetentionFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove Retention files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -794,7 +1051,7 @@
                                         Command="{Binding RemovePythonFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove Python files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -814,7 +1071,7 @@
                                         Command="{Binding RemoveStubsFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove Page Stub files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -836,7 +1093,7 @@
                                         Command="{Binding RemoveCameraFilesFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove Camera files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -856,7 +1113,7 @@
                                         Command="{Binding RemoveProgramFilesFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove Program files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -876,7 +1133,7 @@
                                         Command="{Binding RemoveInspectionFilesFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove Inspection files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -896,7 +1153,7 @@
                                         Command="{Binding RemoveDllsFromBackupCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryDarkButton}"
                                         ToolTip="Remove DLL files from backup">
-                                        <materialDesign:PackIcon Kind="DeleteOutline" />
+                                        <materialDesign:PackIcon Kind="Delete" />
                                     </Button>
                                 </Grid>
 
@@ -1075,140 +1332,141 @@
                             Margin="0,0,8,0"
                             VerticalAlignment="Center"
                             Kind="Wrench" />
-                        <TextBlock Text="Utility" />
+                        <TextBlock Text="Utilities" />
                     </StackPanel>
                 </TabItem.Header>
-                <Grid Margin="16">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="32" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
+                <!--  Nested TabControl with Left-Side Tabs  -->
+                <TabControl
+                    Margin="8"
+                    Style="{StaticResource MaterialDesignTabControl}"
+                    TabStripPlacement="Left">
 
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition />
-                        </Grid.RowDefinitions>
+                    <!--  Network Tab  -->
+                    <TabItem Header="Network">
+                        <Grid Margin="8,2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
 
-                        <Button
-                            Grid.Column="0"
-                            Height="44"
-                            Margin="0,0,0,0"
-                            Command="{Binding CheckNetworkCommand}"
-                            Style="{StaticResource MaterialDesignRaisedButton}">
-                            <StackPanel Orientation="Horizontal">
-                                <materialDesign:PackIcon
-                                    Margin="0,0,8,0"
-                                    VerticalAlignment="Center"
-                                    Kind="Lan" />
-                                <TextBlock Text="Check Network Settings" />
-                            </StackPanel>
-                        </Button>
+                            <Button
+                                Grid.Row="0"
+                                Height="44"
+                                Command="{Binding CheckNetworkCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Center"
+                                        Kind="Lan" />
+                                    <TextBlock Text="Check Network Settings" />
+                                </StackPanel>
+                            </Button>
 
-                        <materialDesign:Card
-                            Grid.Row="1"
-                            Grid.Column="0"
-                            Margin="0,8,0,0"
-                            Padding="4">
-                            <TextBox
-                                MinHeight="200"
-                                VerticalContentAlignment="Top"
-                                AcceptsReturn="True"
-                                FontFamily="Cascadia Code, Consolas, Courier New"
-                                FontSize="12"
-                                IsReadOnly="True"
-                                Style="{StaticResource MaterialDesignTextBox}"
-                                Text="{Binding NetworkUtilityOutput, Mode=OneWay}"
-                                TextWrapping="NoWrap"
-                                VerticalScrollBarVisibility="Auto" />
-                        </materialDesign:Card>
+                            <materialDesign:Card
+                                Grid.Row="1"
+                                Margin="0,8,0,0"
+                                Padding="4">
+                                <TextBox
+                                    MinHeight="200"
+                                    VerticalContentAlignment="Top"
+                                    AcceptsReturn="True"
+                                    FontFamily="Cascadia Code, Consolas, Courier New"
+                                    FontSize="12"
+                                    IsReadOnly="True"
+                                    Style="{StaticResource MaterialDesignTextBox}"
+                                    Text="{Binding NetworkUtilityOutput, Mode=OneWay}"
+                                    TextWrapping="NoWrap"
+                                    VerticalScrollBarVisibility="Auto" />
+                            </materialDesign:Card>
+                        </Grid>
+                    </TabItem>
 
-                        <Button
-                            Grid.Row="0"
-                            Grid.Column="2"
-                            Height="44"
-                            Command="{Binding CheckLargeFilesCommand}"
-                            Style="{StaticResource MaterialDesignRaisedButton}">
-                            <StackPanel Orientation="Horizontal">
-                                <materialDesign:PackIcon
-                                    Margin="0,0,8,0"
-                                    VerticalAlignment="Center"
-                                    Kind="FileFind" />
-                                <TextBlock Text="Check for Large Files" />
-                            </StackPanel>
-                        </Button>
+                    <!--  Disk Tab  -->
+                    <TabItem Header="Disk">
+                        <Grid Margin="8,2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
 
-                        <materialDesign:Card
-                            Grid.Row="1"
-                            Grid.Column="2"
-                            Margin="0,8,0,0"
-                            Padding="8">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
+                            <Button
+                                Grid.Row="0"
+                                Height="44"
+                                Command="{Binding CheckLargeFilesCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Center"
+                                        Kind="FileFind" />
+                                    <TextBlock Text="Check for Large Files" />
+                                </StackPanel>
+                            </Button>
 
-                                <TextBlock
-                                    Grid.Row="0"
-                                    Margin="0,0,0,8"
-                                    Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                                    Text="{Binding UtilityOutput, Mode=OneWay}"
-                                    TextWrapping="Wrap" />
+                            <materialDesign:Card
+                                Grid.Row="1"
+                                Margin="0,8,0,0"
+                                Padding="8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
 
+                                    <TextBlock
+                                        Grid.Row="0"
+                                        Margin="0,0,0,8"
+                                        Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                        Text="{Binding UtilityOutput, Mode=OneWay}"
+                                        TextWrapping="Wrap" />
 
-                                <ListBox
-                                    Grid.Row="1"
-                                    ItemsSource="{Binding LargeFiles}"
-                                    ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                                    ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
+                                    <ListBox
+                                        Grid.Row="1"
+                                        ItemsSource="{Binding LargeFiles}"
+                                        ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                                        ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
 
-                                                <Button
-                                                    Margin="8,0"
-                                                    VerticalAlignment="Center"
-                                                    Command="{Binding OpenFolderCommand}"
-                                                    Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryLightButton}"
-                                                    ToolTip="Open folder in File Explorer">
-                                                    <materialDesign:PackIcon Kind="FolderOpen" />
-                                                </Button>
+                                                    <Button
+                                                        Margin="8,0"
+                                                        VerticalAlignment="Center"
+                                                        Command="{Binding OpenFolderCommand}"
+                                                        Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryLightButton}"
+                                                        ToolTip="Open folder in File Explorer">
+                                                        <materialDesign:PackIcon Kind="FolderOpen" />
+                                                    </Button>
 
-                                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                                    <TextBlock
-                                                        FontWeight="SemiBold"
-                                                        Text="{Binding FileName}"
-                                                        TextTrimming="CharacterEllipsis"
-                                                        ToolTip="{Binding FileName}" />
-                                                    <TextBlock
-                                                        Opacity="0.7"
-                                                        Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                                                        Text="{Binding DirectoryPath}"
-                                                        TextTrimming="CharacterEllipsis"
-                                                        ToolTip="{Binding DirectoryPath}" />
-
-                                                    <TextBlock Text="{Binding SizeFormatted}" />
-                                                </StackPanel>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
-                        </materialDesign:Card>
-
-                    </Grid>
-                </Grid>
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                        <TextBlock
+                                                            FontWeight="SemiBold"
+                                                            Text="{Binding FileName}"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            ToolTip="{Binding FileName}" />
+                                                        <TextBlock
+                                                            Opacity="0.7"
+                                                            Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                                            Text="{Binding DirectoryPath}"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            ToolTip="{Binding DirectoryPath}" />
+                                                        <TextBlock Text="{Binding SizeFormatted}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </materialDesign:Card>
+                        </Grid>
+                    </TabItem>
+                </TabControl>
             </TabItem>
 
             <!--  PMX Launcher Tab  -->
@@ -1256,12 +1514,85 @@
                                         IsChecked="{Binding FreeWindow}"
                                         Style="{StaticResource MaterialDesignCheckBox}" />
 
-                                    <TextBox
-                                        Margin="0,0,0,16"
-                                        materialDesign:HintAssist.Hint="Start Page"
-                                        materialDesign:HintAssist.IsFloating="True"
-                                        Style="{StaticResource MaterialDesignOutlinedTextBox}"
-                                        Text="{Binding StartPage, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Grid Margin="0,0,0,16">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox
+                                            Grid.Column="0"
+                                            materialDesign:HintAssist.Hint="Start Page"
+                                            materialDesign:HintAssist.IsFloating="True"
+                                            Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                            Text="{Binding StartPage, UpdateSourceTrigger=PropertyChanged}" />
+                                        <ToggleButton
+                                            x:Name="PageSelectionButton"
+                                            Grid.Column="1"
+                                            Height="40"
+                                            Margin="8,0,0,0"
+                                            Padding="16,4"
+                                            Style="{StaticResource MaterialDesignFlatButton}"
+                                            ToolTip="Select page from installation">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon Kind="BookOpenPageVariant" />
+                                                <materialDesign:PackIcon Kind="MenuDown" />
+                                            </StackPanel>
+                                        </ToggleButton>
+                                        <Popup
+                                            AllowsTransparency="True"
+                                            IsOpen="{Binding IsChecked, ElementName=PageSelectionButton, Mode=TwoWay}"
+                                            Placement="Bottom"
+                                            PlacementTarget="{Binding ElementName=PageSelectionButton}"
+                                            StaysOpen="False">
+                                            <materialDesign:Card
+                                                Margin="0"
+                                                Padding="0"
+                                                Style="{DynamicResource MaterialDesignElevatedCard}">
+                                                <Grid Margin="0">
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="*" />
+                                                    </Grid.RowDefinitions>
+                                                    <materialDesign:ColorZone Mode="PrimaryDark">
+
+                                                        <TextBlock
+                                                            Margin="16,8"
+                                                            FontWeight="SemiBold"
+                                                            Style="{DynamicResource MaterialDesignTextBlock}"
+                                                            Text="Select a Page:" />
+                                                    </materialDesign:ColorZone>
+                                                    <ListBox
+                                                        Grid.Row="1"
+                                                        Width="350"
+                                                        MaxHeight="400"
+                                                        ItemsSource="{Binding AvailablePages}"
+                                                        ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate>
+
+                                                                <StackPanel Grid.Column="1" Margin="8,4">
+                                                                    <TextBlock
+                                                                        Opacity="0.4"
+                                                                        Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                                                        Text="{Binding UIPath}"
+                                                                        TextWrapping="Wrap" />
+                                                                    <TextBlock
+                                                                        Margin="4,0,0,0"
+                                                                        FontWeight="SemiBold"
+                                                                        Text="{Binding Name}" />
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                        <ListBox.ItemContainerStyle>
+                                                            <Style BasedOn="{StaticResource MaterialDesignListBoxItem}" TargetType="ListBoxItem">
+                                                                <EventSetter Event="MouseLeftButtonUp" Handler="PageListBoxItem_Click" />
+                                                            </Style>
+                                                        </ListBox.ItemContainerStyle>
+                                                    </ListBox>
+                                                </Grid>
+                                            </materialDesign:Card>
+                                        </Popup>
+                                    </Grid>
 
                                     <Grid Margin="0,0,0,8">
                                         <Grid.ColumnDefinitions>
