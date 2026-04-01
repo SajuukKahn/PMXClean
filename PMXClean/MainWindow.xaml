@@ -1466,6 +1466,95 @@
                             </materialDesign:Card>
                         </Grid>
                     </TabItem>
+
+                    <!--  System Tab  -->
+                    <TabItem Header="System">
+                        <Grid Margin="8,2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Button
+                                Grid.Row="0"
+                                Height="44"
+                                Command="{Binding CheckSystemCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Center"
+                                        Kind="Chip" />
+                                    <TextBlock Text="Check System Diagnostics" />
+                                </StackPanel>
+                            </Button>
+
+                            <ScrollViewer
+                                Grid.Row="1"
+                                Margin="0,8,0,0"
+                                VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding SystemStatusItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <materialDesign:Card Margin="0,0,0,8" Padding="12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <!--  Status Icon  -->
+                                                    <materialDesign:PackIcon
+                                                        Grid.Column="0"
+                                                        Width="32"
+                                                        Height="32"
+                                                        Margin="0,0,16,0"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{Binding Status, Converter={x:Static converters:SystemStatusToBrushConverter.Instance}}"
+                                                        Kind="{Binding Status, Converter={x:Static converters:SystemStatusToIconConverter.Instance}}" />
+
+                                                    <!--  Status Information  -->
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock
+                                                            FontSize="15"
+                                                            FontWeight="SemiBold"
+                                                            Text="{Binding Name}" />
+                                                        <TextBlock
+                                                            Margin="0,2,0,0"
+                                                            FontSize="13"
+                                                            Foreground="{Binding Status, Converter={x:Static converters:SystemStatusToBrushConverter.Instance}}"
+                                                            Text="{Binding StatusText}" />
+                                                        <TextBlock
+                                                            Margin="0,4,0,0"
+                                                            Opacity="0.7"
+                                                            Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                                            Text="{Binding Details}"
+                                                            TextWrapping="Wrap" />
+                                                    </StackPanel>
+
+                                                    <!--  Category Badge  -->
+                                                    <Border
+                                                        Grid.Column="2"
+                                                        Margin="8,0,0,0"
+                                                        Padding="8,4"
+                                                        VerticalAlignment="Top"
+                                                        Background="{DynamicResource MaterialDesignDarkBackground}"
+                                                        CornerRadius="4"
+                                                        Opacity="0.5">
+                                                        <TextBlock
+                                                            FontSize="11"
+                                                            FontWeight="Medium"
+                                                            Text="{Binding Category}" />
+                                                    </Border>
+                                                </Grid>
+                                            </materialDesign:Card>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
                 </TabControl>
             </TabItem>
 

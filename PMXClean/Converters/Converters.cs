@@ -3,6 +3,8 @@ namespace PMXClean.Converters
     using System.Globalization;
     using System.Windows;
     using System.Windows.Data;
+    using System.Windows.Media;
+    using PMXClean.Models;
 
     /// <summary>
     /// Converts a non-null value to true, null to false.
@@ -101,6 +103,68 @@ namespace PMXClean.Converters
             }
 
             return Visibility.Visible;
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts SystemStatus to a color brush.
+    /// </summary>
+    public class SystemStatusToBrushConverter : IValueConverter
+    {
+        public static SystemStatusToBrushConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is SystemStatus status)
+            {
+                return status switch
+                {
+                    SystemStatus.Good => new SolidColorBrush(Color.FromRgb(76, 175, 80)),      // Green
+                    SystemStatus.Warning => new SolidColorBrush(Color.FromRgb(255, 152, 0)),   // Orange
+                    SystemStatus.Error => new SolidColorBrush(Color.FromRgb(244, 67, 54)),     // Red
+                    SystemStatus.Info => new SolidColorBrush(Color.FromRgb(33, 150, 243)),     // Blue
+                    SystemStatus.Unknown => new SolidColorBrush(Color.FromRgb(158, 158, 158)), // Gray
+                    _ => new SolidColorBrush(Color.FromRgb(158, 158, 158))
+                };
+            }
+
+            return new SolidColorBrush(Color.FromRgb(158, 158, 158));
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts SystemStatus to a Material Design icon kind.
+    /// </summary>
+    public class SystemStatusToIconConverter : IValueConverter
+    {
+        public static SystemStatusToIconConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is SystemStatus status)
+            {
+                return status switch
+                {
+                    SystemStatus.Good => "CheckCircle",
+                    SystemStatus.Warning => "AlertCircle",
+                    SystemStatus.Error => "CloseCircle",
+                    SystemStatus.Info => "InformationOutline",
+                    SystemStatus.Unknown => "HelpCircle",
+                    _ => "HelpCircle"
+                };
+            }
+
+            return "HelpCircle";
         }
 
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

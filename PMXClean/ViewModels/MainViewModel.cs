@@ -60,6 +60,9 @@ public sealed partial class MainViewModel : ObservableObject
     public partial string NetworkUtilityOutput { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string SystemUtilityOutput { get; set; } = string.Empty;
+
+    [ObservableProperty]
     public partial PathMasterXInstallation? SelectedInstallation { get; set; }
 
     [ObservableProperty]
@@ -151,6 +154,7 @@ public sealed partial class MainViewModel : ObservableObject
         public ObservableCollection<LargeFileResult> LargeFiles { get; } = [];
         public ObservableCollection<LockedFileItem> LockedFiles { get; } = [];
         public ObservableCollection<PageInfo> AvailablePages { get; } = [];
+        public ObservableCollection<SystemStatusItem> SystemStatusItems { get; } = [];
 
         /// <summary>
         /// ViewModel for the built-in Python comparison feature.
@@ -2141,7 +2145,11 @@ public sealed partial class MainViewModel : ObservableObject
                 {
                     FileName = "powershell.exe",
                     Arguments = @"-ExecutionPolicy Bypass -Command ""
-                        $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' };
+                        $adapters = Get-NetAdapter | Where-Object { 
+                            $_.Status -eq 'Up' -and 
+                            $_.Name -notlike 'WAN Miniport*' -and
+                            $_.InterfaceDescription -notlike 'WAN Miniport*'
+                        };
                         foreach ($adapter in $adapters) {
                             Write-Output ('Adapter: ' + $adapter.Name);
                             Write-Output ('  Status: ' + $adapter.Status);
@@ -2276,6 +2284,599 @@ public sealed partial class MainViewModel : ObservableObject
         catch
         {
             // Ignore top-level errors
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckSystemAsync()
+    {
+        try
+        {
+            StatusMessage = "Checking system diagnostics...";
+            SystemStatusItems.Clear();
+
+            await CheckWindowsDefenderAsync();
+            await CheckPowerSettingsAsync();
+            await CheckMemoryAndDiskAsync();
+            await CheckPCIeDevicesAsync();
+
+            StatusMessage = "System diagnostics complete";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task CheckWindowsDefenderAsync()
+    {
+        var items = new List<SystemStatusItem>();
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = @"-ExecutionPolicy Bypass -Command ""
+                        $defender = Get-MpComputerStatus -ErrorAction SilentlyContinue;
+                        if ($defender) {
+                            Write-Output ($defender.RealTimeProtectionEnabled);
+                            Write-Output ($defender.AntivirusEnabled);
+                            Write-Output ($defender.BehaviorMonitorEnabled);
+                            Write-Output ($defender.IoavProtectionEnabled);
+                            if ($defender.QuickScanStartTime) {
+                                Write-Output ($defender.QuickScanStartTime);
+                            } else {
+                                Write-Output 'Never';
+                            }
+                            if ($defender.FullScanStartTime) {
+                                Write-Output ($defender.FullScanStartTime);
+                            } else {
+                                Write-Output 'Never';
+                            }
+                        } else {
+                            Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';
+                        }
+
+                        # Exploit Protection
+                        $expProtect = Get-ProcessMitigation -System -ErrorAction SilentlyContinue;
+                        if ($expProtect) {
+                            Write-Output ($expProtect.DEP.Enable);
+                            Write-Output ($expProtect.ASLR.Enable);
+                            Write-Output ($expProtect.CFG.Enable);
+                        } else {
+                            Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';
+                        }
+                    """,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is not null)
+                {
+                    string result = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (lines.Length >= 9)
+                    {
+                        // Real-Time Protection
+                        bool rtpEnabled = lines[0].Equals("True", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Real-Time Protection",
+                            Category = "Security",
+                            Status = rtpEnabled ? SystemStatus.Good : SystemStatus.Error,
+                            StatusText = rtpEnabled ? "Enabled" : "Disabled",
+                            Details = "Windows Defender real-time protection monitors your system for malware and threats."
+                        });
+
+                        // Antivirus
+                        bool avEnabled = lines[1].Equals("True", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Antivirus Engine",
+                            Category = "Security",
+                            Status = avEnabled ? SystemStatus.Good : SystemStatus.Error,
+                            StatusText = avEnabled ? "Active" : "Inactive",
+                            Details = "Core antivirus engine for threat detection and removal."
+                        });
+
+                        // Behavior Monitor
+                        bool behaviorEnabled = lines[2].Equals("True", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Behavior Monitoring",
+                            Category = "Security",
+                            Status = behaviorEnabled ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = behaviorEnabled ? "Active" : "Inactive",
+                            Details = "Monitors application behavior for suspicious activity."
+                        });
+
+                        // IOAV Protection
+                        bool ioavEnabled = lines[3].Equals("True", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "IOAV Protection",
+                            Category = "Security",
+                            Status = ioavEnabled ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = ioavEnabled ? "Active" : "Inactive",
+                            Details = "IE Downloads and Outlook Express Attachments scanning."
+                        });
+
+                        // Last Scan
+                        string lastQuickScan = lines[4];
+                        string lastFullScan = lines[5];
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Recent Scans",
+                            Category = "Security",
+                            Status = SystemStatus.Info,
+                            StatusText = lastQuickScan != "Never" ? $"Quick: {lastQuickScan}" : "No recent scan",
+                            Details = $"Quick Scan: {lastQuickScan}\nFull Scan: {lastFullScan}"
+                        });
+
+                        // DEP
+                        bool depEnabled = lines[6].Contains("ON", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Data Execution Prevention",
+                            Category = "Security",
+                            Status = depEnabled ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = depEnabled ? "Enabled" : "Disabled",
+                            Details = "Prevents code execution from data-only memory pages."
+                        });
+
+                        // ASLR
+                        bool aslrEnabled = lines[7].Contains("ON", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "ASLR",
+                            Category = "Security",
+                            Status = aslrEnabled ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = aslrEnabled ? "Enabled" : "Disabled",
+                            Details = "Address Space Layout Randomization makes exploitation harder."
+                        });
+
+                        // CFG
+                        bool cfgEnabled = lines[8].Contains("ON", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Control Flow Guard",
+                            Category = "Security",
+                            Status = cfgEnabled ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = cfgEnabled ? "Enabled" : "Disabled",
+                            Details = "Protects against memory corruption vulnerabilities."
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                items.Add(new SystemStatusItem
+                {
+                    Name = "Windows Defender",
+                    Category = "Security",
+                    Status = SystemStatus.Unknown,
+                    StatusText = "Error",
+                    Details = $"Failed to query: {ex.Message}"
+                });
+            }
+        });
+
+        // Add to observable collection on UI thread
+        foreach (var item in items)
+        {
+            SystemStatusItems.Add(item);
+        }
+    }
+
+    private async Task CheckPowerSettingsAsync()
+    {
+        var items = new List<SystemStatusItem>();
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = @"-ExecutionPolicy Bypass -Command ""
+                        $activePlan = powercfg /getactivescheme;
+                        $planName = ($activePlan -replace 'Power Scheme GUID: [^ ]+ +\\((.+)\\)', '$1').Trim();
+                        Write-Output $planName;
+
+                        $minProc = powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN | Select-String 'Current AC Power Setting Index:';
+                        $maxProc = powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX | Select-String 'Current AC Power Setting Index:';
+
+                        if ($minProc) {
+                            $minVal = ($minProc -replace '.+: 0x([0-9a-f]+)', '$1');
+                            Write-Output ([Convert]::ToInt32($minVal, 16));
+                        } else { Write-Output '0'; }
+
+                        if ($maxProc) {
+                            $maxVal = ($maxProc -replace '.+: 0x([0-9a-f]+)', '$1');
+                            Write-Output ([Convert]::ToInt32($maxVal, 16));
+                        } else { Write-Output '100'; }
+
+                        $turbo = powercfg /query SCHEME_CURRENT SUB_PROCESSOR PERFBOOSTMODE | Select-String 'Current AC Power Setting Index:';
+                        if ($turbo) {
+                            $turboVal = ($turbo -replace '.+: 0x([0-9a-f]+)', '$1');
+                            Write-Output ([Convert]::ToInt32($turboVal, 16));
+                        } else { Write-Output '0'; }
+                    """,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is not null)
+                {
+                    string result = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (lines.Length >= 4)
+                    {
+                        string planName = lines[0];
+                        int minState = int.Parse(lines[1]);
+                        int maxState = int.Parse(lines[2]);
+                        int turboMode = int.Parse(lines[3]);
+
+                        // Power Plan
+                        bool isHighPerformance = planName.Contains("High performance", StringComparison.OrdinalIgnoreCase) ||
+                                                 planName.Contains("Ultimate", StringComparison.OrdinalIgnoreCase);
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Power Plan",
+                            Category = "Performance",
+                            Status = isHighPerformance ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = planName,
+                            Details = isHighPerformance ? "Optimized for maximum performance" : "Consider High Performance plan for production systems"
+                        });
+
+                        // CPU State
+                        bool isMaxPerformance = minState >= 100 && maxState >= 100;
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "CPU Power State",
+                            Category = "Performance",
+                            Status = isMaxPerformance ? SystemStatus.Good : SystemStatus.Warning,
+                            StatusText = $"{minState}% - {maxState}%",
+                            Details = $"Minimum: {minState}%\nMaximum: {maxState}%"
+                        });
+
+                        // Turbo Boost
+                        bool turboEnabled = turboMode > 0;
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Turbo Boost",
+                            Category = "Performance",
+                            Status = turboEnabled ? SystemStatus.Good : SystemStatus.Info,
+                            StatusText = turboEnabled ? $"Enabled (Mode {turboMode})" : "Disabled",
+                            Details = turboEnabled ? "CPU can exceed base frequency" : "CPU limited to base frequency"
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                items.Add(new SystemStatusItem
+                {
+                    Name = "Power Settings",
+                    Category = "Performance",
+                    Status = SystemStatus.Unknown,
+                    StatusText = "Error",
+                    Details = $"Failed to query: {ex.Message}"
+                });
+            }
+        });
+
+        // Add to observable collection on UI thread
+        foreach (var item in items)
+        {
+            SystemStatusItems.Add(item);
+        }
+    }
+
+    private async Task CheckMemoryAndDiskAsync()
+    {
+        var items = new List<SystemStatusItem>();
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = @"-ExecutionPolicy Bypass -Command ""
+                        $os = Get-CimInstance Win32_OperatingSystem;
+                        $totalMemGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2);
+                        $freeMemGB = [math]::Round($os.FreePhysicalMemory / 1MB, 2);
+                        $usedMemGB = [math]::Round($totalMemGB - $freeMemGB, 2);
+                        $memPercent = [math]::Round(($usedMemGB / $totalMemGB) * 100, 1);
+
+                        Write-Output $totalMemGB;
+                        Write-Output $usedMemGB;
+                        Write-Output $freeMemGB;
+                        Write-Output $memPercent;
+
+                        $pageFile = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue;
+                        if ($pageFile) {
+                            Write-Output $pageFile.Name;
+                            Write-Output $pageFile.AllocatedBaseSize;
+                            Write-Output $pageFile.CurrentUsage;
+                        } else {
+                            Write-Output 'N/A';Write-Output '0';Write-Output '0';
+                        }
+
+                        $disks = Get-PhysicalDisk -ErrorAction SilentlyContinue;
+                        if ($disks) {
+                            foreach ($disk in $disks) {
+                                Write-Output $disk.FriendlyName;
+                                Write-Output $disk.MediaType;
+                                Write-Output $disk.HealthStatus;
+                                Write-Output $disk.BusType;
+                                if ($disk.Size) {
+                                    $sizeGB = [math]::Round($disk.Size / 1GB, 2);
+                                    Write-Output $sizeGB;
+                                } else {
+                                    Write-Output '0';
+                                }
+                                Write-Output '---';
+                            }
+                        }
+                    """,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is not null)
+                {
+                    string result = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (lines.Length >= 7)
+                    {
+                        double totalMem = double.Parse(lines[0]);
+                        double usedMem = double.Parse(lines[1]);
+                        double freeMem = double.Parse(lines[2]);
+                        double memPercent = double.Parse(lines[3]);
+
+                        // Memory Status
+                        SystemStatus memStatus = memPercent < 80 ? SystemStatus.Good :
+                                                memPercent < 90 ? SystemStatus.Warning : SystemStatus.Error;
+                        items.Add(new SystemStatusItem
+                        {
+                            Name = "Memory Usage",
+                            Category = "Hardware",
+                            Status = memStatus,
+                            StatusText = $"{memPercent:F1}% ({usedMem:F1} GB / {totalMem:F1} GB)",
+                            Details = $"Total: {totalMem:F1} GB\nUsed: {usedMem:F1} GB\nFree: {freeMem:F1} GB"
+                        });
+
+                        // Page File
+                        string pageFileName = lines[4];
+                        int pageFileAllocated = int.Parse(lines[5]);
+                        int pageFileUsage = int.Parse(lines[6]);
+
+                        if (pageFileName != "N/A")
+                        {
+                            double pagePercent = pageFileAllocated > 0 ? (pageFileUsage / (double)pageFileAllocated) * 100 : 0;
+                            SystemStatus pageStatus = pagePercent < 50 ? SystemStatus.Good :
+                                                     pagePercent < 75 ? SystemStatus.Warning : SystemStatus.Error;
+                            items.Add(new SystemStatusItem
+                            {
+                                Name = "Page File",
+                                Category = "Hardware",
+                                Status = pageStatus,
+                                StatusText = $"{pageFileUsage} MB / {pageFileAllocated} MB",
+                                Details = $"Location: {pageFileName}\nAllocated: {pageFileAllocated} MB\nUsage: {pageFileUsage} MB ({pagePercent:F1}%)"
+                            });
+                        }
+
+                        // Physical Disks
+                        int diskIndex = 7;
+                        while (diskIndex + 5 < lines.Length)
+                        {
+                            string diskName = lines[diskIndex];
+                            string mediaType = lines[diskIndex + 1];
+                            string healthStatus = lines[diskIndex + 2];
+                            string busType = lines[diskIndex + 3];
+                            string sizeGB = lines[diskIndex + 4];
+
+                            SystemStatus diskStatus = healthStatus.Equals("Healthy", StringComparison.OrdinalIgnoreCase) ? SystemStatus.Good :
+                                                     healthStatus.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? SystemStatus.Warning : SystemStatus.Error;
+
+                            bool isSSD = mediaType.Contains("SSD", StringComparison.OrdinalIgnoreCase);
+                            items.Add(new SystemStatusItem
+                            {
+                                Name = diskName,
+                                Category = "Hardware",
+                                Status = diskStatus,
+                                StatusText = $"{healthStatus} - {mediaType}",
+                                Details = $"Media: {mediaType}\nHealth: {healthStatus}\nBus: {busType}\nSize: {sizeGB} GB" +
+                                         (isSSD ? "\n✓ SSD - Fast storage" : "")
+                            });
+
+                            diskIndex += 6; // Skip to next disk (including '---' separator)
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                items.Add(new SystemStatusItem
+                {
+                    Name = "Memory & Disk",
+                    Category = "Hardware",
+                    Status = SystemStatus.Unknown,
+                    StatusText = "Error",
+                    Details = $"Failed to query: {ex.Message}"
+                });
+            }
+        });
+
+        // Add to observable collection on UI thread
+        foreach (var item in items)
+        {
+            SystemStatusItems.Add(item);
+        }
+    }
+
+    private async Task CheckPCIeDevicesAsync()
+    {
+        var items = new List<SystemStatusItem>();
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = @"-ExecutionPolicy Bypass -Command ""
+                        $problemDevices = Get-PnpDevice -Class 'Display','Net','SCSIAdapter' -Status Error,Degraded,Unknown -ErrorAction SilentlyContinue;
+                        if ($problemDevices) {
+                            foreach ($dev in $problemDevices) {
+                                Write-Output $dev.FriendlyName;
+                                Write-Output $dev.Class;
+                                Write-Output $dev.Status;
+                                Write-Output $dev.Problem;
+                                Write-Output '---';
+                            }
+                        } else {
+                            Write-Output 'OK';
+                        }
+
+                        Write-Output '===';
+
+                        $tpm = Get-Tpm -ErrorAction SilentlyContinue;
+                        if ($tpm) {
+                            Write-Output $tpm.TpmPresent;
+                            Write-Output $tpm.TpmReady;
+                            Write-Output $tpm.TpmEnabled;
+                            Write-Output $tpm.TpmActivated;
+                        } else {
+                            Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';Write-Output 'N/A';
+                        }
+                    """,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is not null)
+                {
+                    string result = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    var sections = result.Split("===", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                    // Process device problems
+                    if (sections.Length > 0)
+                    {
+                        var deviceLines = sections[0].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                        if (deviceLines.Length > 0 && deviceLines[0] == "OK")
+                        {
+                            items.Add(new SystemStatusItem
+                            {
+                                Name = "PCIe Devices",
+                                Category = "Hardware",
+                                Status = SystemStatus.Good,
+                                StatusText = "All devices OK",
+                                Details = "No problem devices detected in Display, Network, or Storage controllers"
+                            });
+                        }
+                        else
+                        {
+                            int deviceIndex = 0;
+                            while (deviceIndex + 3 < deviceLines.Length)
+                            {
+                                string deviceName = deviceLines[deviceIndex];
+                                string deviceClass = deviceLines[deviceIndex + 1];
+                                string deviceStatus = deviceLines[deviceIndex + 2];
+                                string deviceProblem = deviceLines[deviceIndex + 3];
+
+                                SystemStatus status = deviceStatus.Equals("Error", StringComparison.OrdinalIgnoreCase) ? SystemStatus.Error :
+                                                     deviceStatus.Equals("Degraded", StringComparison.OrdinalIgnoreCase) ? SystemStatus.Warning : SystemStatus.Unknown;
+
+                                items.Add(new SystemStatusItem
+                                {
+                                    Name = deviceName,
+                                    Category = "Hardware",
+                                    Status = status,
+                                    StatusText = deviceStatus,
+                                    Details = $"Class: {deviceClass}\nStatus: {deviceStatus}\nProblem: {deviceProblem}"
+                                });
+
+                                deviceIndex += 5; // Skip to next device (including '---')
+                            }
+                        }
+                    }
+
+                    // Process TPM
+                    if (sections.Length > 1)
+                    {
+                        var tpmLines = sections[1].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                        if (tpmLines.Length >= 4)
+                        {
+                            bool tpmPresent = tpmLines[0].Equals("True", StringComparison.OrdinalIgnoreCase);
+                            bool tpmReady = tpmLines[1].Equals("True", StringComparison.OrdinalIgnoreCase);
+                            bool tpmEnabled = tpmLines[2].Equals("True", StringComparison.OrdinalIgnoreCase);
+                            bool tpmActivated = tpmLines[3].Equals("True", StringComparison.OrdinalIgnoreCase);
+
+                            if (tpmLines[0] != "N/A")
+                            {
+                                SystemStatus tpmStatus = tpmPresent && tpmReady && tpmEnabled && tpmActivated ? SystemStatus.Good :
+                                                        tpmPresent ? SystemStatus.Warning : SystemStatus.Info;
+
+                                string tpmStatusText = tpmPresent && tpmReady ? "Ready" :
+                                                      tpmPresent ? "Not Ready" : "Not Present";
+
+                                items.Add(new SystemStatusItem
+                                {
+                                    Name = "TPM (Trusted Platform Module)",
+                                    Category = "Security",
+                                    Status = tpmStatus,
+                                    StatusText = tpmStatusText,
+                                    Details = $"Present: {tpmPresent}\nReady: {tpmReady}\nEnabled: {tpmEnabled}\nActivated: {tpmActivated}"
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                items.Add(new SystemStatusItem
+                {
+                    Name = "PCIe & Hardware",
+                    Category = "Hardware",
+                    Status = SystemStatus.Unknown,
+                    StatusText = "Error",
+                    Details = $"Failed to query: {ex.Message}"
+                });
+            }
+        });
+
+        // Add to observable collection on UI thread
+        foreach (var item in items)
+        {
+            SystemStatusItems.Add(item);
         }
     }
 
