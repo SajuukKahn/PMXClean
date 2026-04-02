@@ -1338,7 +1338,7 @@
 
                 <!--  Nested TabControl with Left-Side Tabs  -->
                 <TabControl
-                    Margin="8"
+                    Margin="0,8,0,8"
                     Style="{StaticResource MaterialDesignTabControl}"
                     TabStripPlacement="Left">
 
@@ -1385,7 +1385,7 @@
                                                         Width="32"
                                                         Height="32"
                                                         Margin="0,0,16,0"
-                                                        VerticalAlignment="Center"
+                                                        VerticalAlignment="Top"
                                                         Foreground="{Binding Status, Converter={x:Static converters:SystemStatusToBrushConverter.Instance}}"
                                                         Kind="{Binding Status, Converter={x:Static converters:SystemStatusToIconConverter.Instance}}" />
 
@@ -1482,7 +1482,7 @@
                                                         Width="32"
                                                         Height="32"
                                                         Margin="0,0,16,0"
-                                                        VerticalAlignment="Center"
+                                                        VerticalAlignment="Top"
                                                         Command="{Binding OpenFolderCommand}"
                                                         Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryLightButton}"
                                                         ToolTip="Open folder in File Explorer">
@@ -1563,7 +1563,7 @@
                                                         Width="32"
                                                         Height="32"
                                                         Margin="0,0,16,0"
-                                                        VerticalAlignment="Center"
+                                                        VerticalAlignment="Top"
                                                         Foreground="{Binding Status, Converter={x:Static converters:SystemStatusToBrushConverter.Instance}}"
                                                         Kind="{Binding Status, Converter={x:Static converters:SystemStatusToIconConverter.Instance}}" />
 
@@ -1587,6 +1587,115 @@
                                                     </StackPanel>
 
                                                     <!--  Category Badge  -->
+                                                    <Border
+                                                        Grid.Column="2"
+                                                        Margin="8,0,0,0"
+                                                        Padding="8,4"
+                                                        VerticalAlignment="Top"
+                                                        Background="{DynamicResource MaterialDesignDarkBackground}"
+                                                        CornerRadius="4"
+                                                        Opacity="0.5">
+                                                        <TextBlock
+                                                            FontSize="11"
+                                                            FontWeight="Medium"
+                                                            Text="{Binding Category}" />
+                                                    </Border>
+                                                </Grid>
+                                            </materialDesign:Card>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
+
+                    <!--  Event Logs Tab  -->
+                    <TabItem Header="Event Logs">
+                        <Grid Margin="8,2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Button
+                                Grid.Row="0"
+                                Height="44"
+                                Command="{Binding SearchEventLogsCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Center"
+                                        Kind="FileDocumentMultiple" />
+                                    <TextBlock Text="Search Event Viewer for PathMasterX" />
+                                </StackPanel>
+                            </Button>
+
+                            <TextBlock
+                                Grid.Row="1"
+                                Margin="0,8,0,0"
+                                Opacity="0.7"
+                                Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                Text="{Binding EventSearchStatus, Mode=OneWay}" />
+
+                            <ScrollViewer
+                                Grid.Row="2"
+                                Margin="0,8,0,0"
+                                VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding EventLogItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <materialDesign:Card Margin="0,0,0,8" Padding="12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <!--  Level Icon  -->
+                                                    <materialDesign:PackIcon
+                                                        Grid.Column="0"
+                                                        Width="32"
+                                                        Height="32"
+                                                        Margin="0,0,16,0"
+                                                        VerticalAlignment="Top"
+                                                        Foreground="{Binding Level, Converter={x:Static converters:EventLogLevelToBrushConverter.Instance}}"
+                                                        Kind="{Binding Level, Converter={x:Static converters:EventLogLevelToIconConverter.Instance}}" />
+
+                                                    <!--  Event Information  -->
+                                                    <StackPanel
+                                                        Grid.Column="1"
+                                                        Grid.ColumnSpan="2"
+                                                        VerticalAlignment="Center">
+                                                        <TextBlock
+                                                            FontSize="15"
+                                                            FontWeight="SemiBold"
+                                                            Text="{Binding Name}" />
+                                                        <TextBlock
+                                                            Margin="0,2,0,0"
+                                                            FontSize="13"
+                                                            Foreground="{Binding Level, Converter={x:Static converters:EventLogLevelToBrushConverter.Instance}}"
+                                                            Text="{Binding StatusText}" />
+
+                                                        <Expander Header="Details">
+
+                                                            <TextBox
+                                                                Margin="0,4,0,0"
+                                                                FontFamily="Consolas"
+                                                                FontSize="12"
+                                                                IsReadOnly="True"
+                                                                Opacity="0.7"
+                                                                ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                                ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                                                Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                                                Text="{Binding Details}"
+                                                                TextWrapping="{Binding Details, Converter={x:Static converters:NewlineToTextWrappingConverter.Instance}}" />
+                                                        </Expander>
+                                                    </StackPanel>
+
+                                                    <!--  Category Badge (Log Name)  -->
                                                     <Border
                                                         Grid.Column="2"
                                                         Margin="8,0,0,0"

@@ -57,6 +57,9 @@ public sealed partial class MainViewModel : ObservableObject
     public partial string UtilityOutput { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string EventSearchStatus { get; set; } = string.Empty;
+
+    [ObservableProperty]
     public partial PathMasterXInstallation? SelectedInstallation { get; set; }
 
     [ObservableProperty]
@@ -150,6 +153,7 @@ public sealed partial class MainViewModel : ObservableObject
         public ObservableCollection<PageInfo> AvailablePages { get; } = [];
         public ObservableCollection<SystemStatusItem> SystemStatusItems { get; } = [];
         public ObservableCollection<SystemStatusItem> NetworkStatusItems { get; } = [];
+        public ObservableCollection<EventLogItem> EventLogItems { get; } = [];
 
         /// <summary>
         /// ViewModel for the built-in Python comparison feature.
@@ -2251,16 +2255,16 @@ public sealed partial class MainViewModel : ObservableObject
             ("Camera", "200.200.200.201", "Vision system camera for inspection")
         };
 
-        foreach (var device in devices)
+        foreach (var (Name, IP, Description) in devices)
         {
-            bool online = await PingHostAsync(device.IP);
+            bool online = await PingHostAsync(IP);
             NetworkStatusItems.Add(new SystemStatusItem
             {
-                Name = device.Name,
+                Name = Name,
                 Category = "Device",
                 Status = online ? SystemStatus.Good : SystemStatus.Error,
                 StatusText = online ? "Online" : "Offline",
-                Details = $"IP: {device.IP}\n{device.Description}"
+                Details = $"IP: {IP}\n{Description}"
             });
         }
     }
@@ -2328,8 +2332,10 @@ public sealed partial class MainViewModel : ObservableObject
                                     insertIndex = i;
                                     break;
                                 }
+
                                 insertIndex = i + 1;
                             }
+
                             LargeFiles.Insert(insertIndex, result);
                             UtilityOutput = $"Found {LargeFiles.Count} files larger than 200MB...";
                         });
@@ -2357,6 +2363,211 @@ public sealed partial class MainViewModel : ObservableObject
         {
             // Ignore top-level errors
         }
+    }
+
+    [RelayCommand]
+    private async Task SearchEventLogsAsync()
+    {
+        try
+        {
+            StatusMessage = "Searching Event Viewer for PathMasterX events...";
+            EventSearchStatus = "Searching Application, System, and Windows Error Reporting logs...";
+            EventLogItems.Clear();
+
+            var searchTerms = new[]
+            {
+                "PVA.PathMasterX",
+                "PathMasterX",
+                "PathMaster X",
+                "PathMaster"
+            };
+
+            var logNames = new[] { "Application", "System" };
+
+            await Task.Run(() =>
+            {
+                foreach (var logName in logNames)
+                {
+                    SearchEventLog(logName, searchTerms);
+                }
+
+                // Also search Windows Error Reporting logs
+                SearchWerLogs(searchTerms);
+            });
+
+            EventSearchStatus = $"Found {EventLogItems.Count} events related to PathMasterX";
+            StatusMessage = $"Event search complete - Found {EventLogItems.Count} events";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error searching event logs: {ex.Message}";
+            EventSearchStatus = $"Error: {ex.Message}";
+        }
+    }
+
+    private void SearchEventLog(string logName, string[] searchTerms)
+    {
+        try
+        {
+            using var eventLog = new System.Diagnostics.EventLog(logName);
+            var entries = eventLog.Entries.Cast<System.Diagnostics.EventLogEntry>()
+                .OrderByDescending(e => e.TimeGenerated)
+                .Take(10000); // Limit to recent entries for performance
+
+            foreach (var entry in entries)
+            {
+                try
+                {
+                    string message = entry.Message ?? string.Empty;
+                    string source = entry.Source ?? string.Empty;
+
+                    bool isMatch = searchTerms.Any(term =>
+                        message.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                        source.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+                    if (isMatch)
+                    {
+                        var logItem = new EventLogItem
+                        {
+                            Name = source,
+                            EventId = entry.InstanceId,
+                            Level = ConvertToEventLogLevel(entry.EntryType),
+                            StatusText = $"{entry.EntryType} - {entry.TimeGenerated:g}",
+                            Details = message,
+                            Category = logName,
+                            TimeCreated = entry.TimeGenerated
+                        };
+
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            // Insert in sorted order by time (newest first)
+                            int insertIndex = 0;
+                            for (int i = 0; i < EventLogItems.Count; i++)
+                            {
+                                if (logItem.TimeCreated > EventLogItems[i].TimeCreated)
+                                {
+                                    insertIndex = i;
+                                    break;
+                                }
+
+                                insertIndex = i + 1;
+                            }
+
+                            EventLogItems.Insert(insertIndex, logItem);
+                            EventSearchStatus = $"Found {EventLogItems.Count} events...";
+                        });
+                    }
+                }
+                catch
+                {
+                    // Skip entries that can't be read
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error reading {logName} log: {ex.Message}");
+        }
+    }
+
+    private void SearchWerLogs(string[] searchTerms)
+    {
+        try
+        {
+            // Search Windows Error Reporting with EventLogReader for better performance
+            var query = new System.Diagnostics.Eventing.Reader.EventLogQuery(
+                "Application",
+                System.Diagnostics.Eventing.Reader.PathType.LogName,
+                "*[System[Provider[@Name='Windows Error Reporting']]]");
+
+            using var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(query);
+
+            System.Diagnostics.Eventing.Reader.EventRecord? record;
+            while ((record = reader.ReadEvent()) is not null)
+            {
+                try
+                {
+                    string? description = record.FormatDescription();
+                    if (description is null)
+                    {
+                        continue;
+                    }
+
+                    bool isMatch = searchTerms.Any(term =>
+                        description.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+                    if (isMatch)
+                    {
+                        var logItem = new EventLogItem
+                        {
+                            Name = record.ProviderName ?? "Windows Error Reporting",
+                            EventId = record.Id,
+                            Level = ConvertReaderLevelToEventLogLevel(record.Level),
+                            StatusText = $"WER Event - {record.TimeCreated:g}",
+                            Details = description,
+                            Category = "WER",
+                            TimeCreated = record.TimeCreated ?? DateTime.MinValue
+                        };
+
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            int insertIndex = 0;
+                            for (int i = 0; i < EventLogItems.Count; i++)
+                            {
+                                if (logItem.TimeCreated > EventLogItems[i].TimeCreated)
+                                {
+                                    insertIndex = i;
+                                    break;
+                                }
+
+                                insertIndex = i + 1;
+                            }
+
+                            EventLogItems.Insert(insertIndex, logItem);
+                            EventSearchStatus = $"Found {EventLogItems.Count} events...";
+                        });
+                    }
+                }
+                catch
+                {
+                    // Skip records that can't be read
+                }
+                finally
+                {
+                    record.Dispose();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error reading WER logs: {ex.Message}");
+        }
+    }
+
+    private static EventLogLevel ConvertToEventLogLevel(System.Diagnostics.EventLogEntryType entryType)
+    {
+        return entryType switch
+        {
+            System.Diagnostics.EventLogEntryType.Error => EventLogLevel.Error,
+            System.Diagnostics.EventLogEntryType.Warning => EventLogLevel.Warning,
+            System.Diagnostics.EventLogEntryType.Information => EventLogLevel.Information,
+            System.Diagnostics.EventLogEntryType.SuccessAudit => EventLogLevel.Information,
+            System.Diagnostics.EventLogEntryType.FailureAudit => EventLogLevel.Warning,
+            _ => EventLogLevel.Information
+        };
+    }
+
+    private static EventLogLevel ConvertReaderLevelToEventLogLevel(byte? level)
+    {
+        return level switch
+        {
+            1 => EventLogLevel.Critical,
+            2 => EventLogLevel.Error,
+            3 => EventLogLevel.Warning,
+            4 => EventLogLevel.Information,
+            5 => EventLogLevel.Verbose,
+            _ => EventLogLevel.Information
+        };
     }
 
     [RelayCommand]

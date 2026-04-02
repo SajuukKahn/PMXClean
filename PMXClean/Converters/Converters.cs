@@ -172,4 +172,91 @@ namespace PMXClean.Converters
             throw new NotImplementedException();
         }
     }
+
+    /// <summary>
+    /// Converts EventLogLevel to a color brush.
+    /// </summary>
+    public class EventLogLevelToBrushConverter : IValueConverter
+    {
+        public static EventLogLevelToBrushConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is EventLogLevel level)
+            {
+                return level switch
+                {
+                    EventLogLevel.Critical => new SolidColorBrush(Color.FromRgb(183, 28, 28)),    // Dark Red
+                    EventLogLevel.Error => new SolidColorBrush(Color.FromRgb(244, 67, 54)),       // Red
+                    EventLogLevel.Warning => new SolidColorBrush(Color.FromRgb(255, 152, 0)),     // Orange
+                    EventLogLevel.Information => new SolidColorBrush(Color.FromRgb(33, 150, 243)), // Blue
+                    EventLogLevel.Verbose => new SolidColorBrush(Color.FromRgb(158, 158, 158)),   // Gray
+                    _ => new SolidColorBrush(Color.FromRgb(158, 158, 158))
+                };
+            }
+
+            return new SolidColorBrush(Color.FromRgb(158, 158, 158));
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts EventLogLevel to a Material Design icon kind.
+    /// </summary>
+    public class EventLogLevelToIconConverter : IValueConverter
+    {
+        public static EventLogLevelToIconConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is EventLogLevel level)
+            {
+                return level switch
+                {
+                    EventLogLevel.Critical => "AlertOctagon",
+                    EventLogLevel.Error => "CloseCircle",
+                    EventLogLevel.Warning => "AlertCircle",
+                    EventLogLevel.Information => "InformationOutline",
+                    EventLogLevel.Verbose => "MessageTextOutline",
+                    _ => "HelpCircle"
+                };
+            }
+
+            return "HelpCircle";
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts text to TextWrapping: NoWrap if text contains newlines, Wrap otherwise.
+    /// Useful for preserving formatting of stack traces while wrapping single-line text.
+    /// </summary>
+    public class NewlineToTextWrappingConverter : IValueConverter
+    {
+        public static NewlineToTextWrappingConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is string text)
+            {
+                bool hasNewlines = text.Contains('\n') || text.Contains('\r');
+                return hasNewlines ? TextWrapping.NoWrap : TextWrapping.Wrap;
+            }
+
+            return TextWrapping.Wrap;
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
 }
