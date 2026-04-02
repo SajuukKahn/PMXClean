@@ -57,12 +57,6 @@ public sealed partial class MainViewModel : ObservableObject
     public partial string UtilityOutput { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial string NetworkUtilityOutput { get; set; } = string.Empty;
-
-    [ObservableProperty]
-    public partial string SystemUtilityOutput { get; set; } = string.Empty;
-
-    [ObservableProperty]
     public partial PathMasterXInstallation? SelectedInstallation { get; set; }
 
     [ObservableProperty]
@@ -155,6 +149,7 @@ public sealed partial class MainViewModel : ObservableObject
         public ObservableCollection<LockedFileItem> LockedFiles { get; } = [];
         public ObservableCollection<PageInfo> AvailablePages { get; } = [];
         public ObservableCollection<SystemStatusItem> SystemStatusItems { get; } = [];
+        public ObservableCollection<SystemStatusItem> NetworkStatusItems { get; } = [];
 
         /// <summary>
         /// ViewModel for the built-in Python comparison feature.
@@ -2109,22 +2104,10 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             StatusMessage = "Checking network settings...";
-            NetworkUtilityOutput = string.Empty;
+            NetworkStatusItems.Clear();
 
-            await GetConsolidatedAdapterInfoAsync();
-
-            // Ping devices
-            NetworkUtilityOutput += "\nPinging Galil (100.100.100.101)\n";
-            bool galilOnline = await PingHostAsync("100.100.100.101");
-            NetworkUtilityOutput += galilOnline ? "    Status: Online\n" : "    Status: Offline\n";
-
-            NetworkUtilityOutput += "\nPinging Modbus I/O (100.100.100.110)\n";
-            bool modbusOnline = await PingHostAsync("100.100.100.110");
-            NetworkUtilityOutput += modbusOnline ? "    Status: Online\n" : "    Status: Offline\n";
-
-            NetworkUtilityOutput += "\nPinging Camera (200.200.200.201)\n";
-            bool cameraOnline = await PingHostAsync("200.200.200.201");
-            NetworkUtilityOutput += cameraOnline ? "    Status: Online\n" : "    Status: Offline\n";
+            await GetNetworkAdaptersAsync();
+            await CheckNetworkDevicesAsync();
 
             StatusMessage = "Network check complete";
         }
@@ -2134,13 +2117,14 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private async Task GetConsolidatedAdapterInfoAsync()
+    private async Task GetNetworkAdaptersAsync()
     {
+        var items = new List<SystemStatusItem>();
+
         await Task.Run(() =>
         {
             try
             {
-                // Single query to get all adapter information at once
                 var psi = new ProcessStartInfo
                 {
                     FileName = "powershell.exe",
@@ -2151,36 +2135,30 @@ public sealed partial class MainViewModel : ObservableObject
                             $_.InterfaceDescription -notlike 'WAN Miniport*'
                         };
                         foreach ($adapter in $adapters) {
-                            Write-Output ('Adapter: ' + $adapter.Name);
-                            Write-Output ('  Status: ' + $adapter.Status);
+                            $name = $adapter.Name;
+                            $status = $adapter.Status;
+                            $ipv4 = '';
+                            $gateway = '';
+                            $dns = '';
+                            $jumbo = '';
+                            $description = $adapter.InterfaceDescription;
 
-                            # Get IP configuration
                             $ipConfig = Get-NetIPConfiguration -InterfaceAlias $adapter.Name -ErrorAction SilentlyContinue;
                             if ($ipConfig) {
-                                if ($ipConfig.IPv4Address) {
-                                    Write-Output ('  IPv4: ' + $ipConfig.IPv4Address.IPAddress);
-                                }
-                                if ($ipConfig.IPv4DefaultGateway) {
-                                    Write-Output ('  Gateway: ' + $ipConfig.IPv4DefaultGateway.NextHop);
-                                }
+                                if ($ipConfig.IPv4Address) { $ipv4 = $ipConfig.IPv4Address.IPAddress; }
+                                if ($ipConfig.IPv4DefaultGateway) { $gateway = $ipConfig.IPv4DefaultGateway.NextHop; }
                                 if ($ipConfig.DNSServer) {
-                                    $dnsServers = ($ipConfig.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses) -join ', ';
-                                    if ($dnsServers) {
-                                        Write-Output ('  DNS: ' + $dnsServers);
-                                    }
+                                    $dns = ($ipConfig.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses) -join ', ';
                                 }
                             }
 
-                            # Get advanced properties (only for Ethernet adapters)
                             if ($adapter.PhysicalMediaType -like '*802.3*') {
                                 $props = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue;
-
-                                # Jumbo Frames
-                                $jumbo = $props | Where-Object { $_.RegistryKeyword -eq '*JumboPacket' } | Select-Object -ExpandProperty DisplayValue -ErrorAction SilentlyContinue;
-                                if ($jumbo) { Write-Output ('  Jumbo Frames: ' + $jumbo); }
+                                $jumboVal = $props | Where-Object { $_.RegistryKeyword -eq '*JumboPacket' } | Select-Object -ExpandProperty DisplayValue -ErrorAction SilentlyContinue;
+                                if ($jumboVal) { $jumbo = $jumboVal; }
                             }
 
-                            Write-Output '';
+                            Write-Output ('ADAPTER:' + $name + '|' + $status + '|' + $ipv4 + '|' + $gateway + '|' + $dns + '|' + $jumbo + '|' + $description);
                         }
                     """,
                     RedirectStandardOutput = true,
@@ -2193,14 +2171,98 @@ public sealed partial class MainViewModel : ObservableObject
                 {
                     string result = process.StandardOutput.ReadToEnd();
                     process.WaitForExit();
-                    NetworkUtilityOutput += result.TrimEnd() + "\n";
+
+                    var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    foreach (var line in lines)
+                    {
+                        if (line.StartsWith("ADAPTER:"))
+                        {
+                            var parts = line[8..].Split('|');
+                            if (parts.Length >= 7)
+                            {
+                                string name = parts[0];
+                                string status = parts[1];
+                                string ipv4 = parts[2];
+                                string gateway = parts[3];
+                                string dns = parts[4];
+                                string jumbo = parts[5];
+                                string description = parts[6];
+
+                                var details = new StringBuilder();
+                                details.AppendLine($"Interface: {description}");
+                                if (!string.IsNullOrEmpty(ipv4))
+                                {
+                                    details.AppendLine($"IPv4: {ipv4}");
+                                }
+
+                                if (!string.IsNullOrEmpty(gateway))
+                                {
+                                    details.AppendLine($"Gateway: {gateway}");
+                                }
+
+                                if (!string.IsNullOrEmpty(dns))
+                                {
+                                    details.AppendLine($"DNS: {dns}");
+                                }
+
+                                if (!string.IsNullOrEmpty(jumbo))
+                                {
+                                    details.AppendLine($"Jumbo Frames: {jumbo}");
+                                }
+
+                                items.Add(new SystemStatusItem
+                                {
+                                    Name = name,
+                                    Category = "Adapter",
+                                    Status = status == "Up" ? SystemStatus.Good : SystemStatus.Warning,
+                                    StatusText = !string.IsNullOrEmpty(ipv4) ? ipv4 : status,
+                                    Details = details.ToString().TrimEnd()
+                                });
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                NetworkUtilityOutput += $"Error getting adapter info: {ex.Message}\n";
+                items.Add(new SystemStatusItem
+                {
+                    Name = "Network Adapters",
+                    Category = "Adapter",
+                    Status = SystemStatus.Unknown,
+                    StatusText = "Error",
+                    Details = $"Failed to query: {ex.Message}"
+                });
             }
         });
+
+        foreach (var item in items)
+        {
+            NetworkStatusItems.Add(item);
+        }
+    }
+
+    private async Task CheckNetworkDevicesAsync()
+    {
+        var devices = new (string Name, string IP, string Description)[]
+        {
+            ("Galil Motion Controller", "100.100.100.101", "Primary motion controller for axis control"),
+            ("Modbus I/O Module", "100.100.100.110", "Digital and analog I/O interface"),
+            ("Camera", "200.200.200.201", "Vision system camera for inspection")
+        };
+
+        foreach (var device in devices)
+        {
+            bool online = await PingHostAsync(device.IP);
+            NetworkStatusItems.Add(new SystemStatusItem
+            {
+                Name = device.Name,
+                Category = "Device",
+                Status = online ? SystemStatus.Good : SystemStatus.Error,
+                StatusText = online ? "Online" : "Offline",
+                Details = $"IP: {device.IP}\n{device.Description}"
+            });
+        }
     }
 
     private static async Task<bool> PingHostAsync(string host)
@@ -2223,22 +2285,15 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             StatusMessage = "Searching for large files...";
-            UtilityOutput = "Searching for files larger than 200MB...\nThis may take a while...\n";
+            UtilityOutput = "Searching for files larger than 200MB...";
             LargeFiles.Clear();
-
-            var foundFiles = new List<LargeFileResult>();
 
             await Task.Run(() =>
             {
                 string userPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 const long sizeThreshold = 209715200; // 200MB
-                SearchLargeFiles(userPath, sizeThreshold, foundFiles);
+                SearchLargeFiles(userPath, sizeThreshold);
             });
-
-            foreach (var file in foundFiles.OrderByDescending(f => f.SizeBytes))
-            {
-                LargeFiles.Add(file);
-            }
 
             UtilityOutput = $"Found {LargeFiles.Count} files larger than 200MB";
             StatusMessage = $"Large file search complete - Found {LargeFiles.Count} files";
@@ -2249,7 +2304,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private static void SearchLargeFiles(string path, long sizeThreshold, List<LargeFileResult> results)
+    private void SearchLargeFiles(string path, long sizeThreshold)
     {
         try
         {
@@ -2260,7 +2315,24 @@ public sealed partial class MainViewModel : ObservableObject
                     var fileInfo = new FileInfo(file);
                     if (fileInfo.Length > sizeThreshold)
                     {
-                        results.Add(new LargeFileResult(fileInfo.FullName, fileInfo.Length));
+                        var result = new LargeFileResult(fileInfo.FullName, fileInfo.Length);
+
+                        // Add to collection on UI thread, inserting in sorted order (largest first)
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            int insertIndex = 0;
+                            for (int i = 0; i < LargeFiles.Count; i++)
+                            {
+                                if (result.SizeBytes > LargeFiles[i].SizeBytes)
+                                {
+                                    insertIndex = i;
+                                    break;
+                                }
+                                insertIndex = i + 1;
+                            }
+                            LargeFiles.Insert(insertIndex, result);
+                            UtilityOutput = $"Found {LargeFiles.Count} files larger than 200MB...";
+                        });
                     }
                 }
                 catch
@@ -2273,7 +2345,7 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 try
                 {
-                    SearchLargeFiles(dir, sizeThreshold, results);
+                    SearchLargeFiles(dir, sizeThreshold);
                 }
                 catch
                 {
@@ -2488,8 +2560,11 @@ public sealed partial class MainViewModel : ObservableObject
                     FileName = "powershell.exe",
                     Arguments = @"-ExecutionPolicy Bypass -Command ""
                         $activePlan = powercfg /getactivescheme;
-                        $planName = ($activePlan -replace 'Power Scheme GUID: [^ ]+ +\\((.+)\\)', '$1').Trim();
-                        Write-Output $planName;
+                        if ($activePlan -match '\(([^)]+)\)') {
+                            Write-Output $matches[1];
+                        } else {
+                            Write-Output 'Unknown';
+                        }
 
                         $minProc = powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN | Select-String 'Current AC Power Setting Index:';
                         $maxProc = powercfg /query SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX | Select-String 'Current AC Power Setting Index:';
