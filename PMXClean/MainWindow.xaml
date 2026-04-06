@@ -35,6 +35,8 @@
         <materialDesign:ColorZone
             Grid.Row="0"
             Padding="16"
+            AllowDrop="True"
+            Drop="ColorZone_Drop"
             Mode="SecondaryDark">
             <Grid>
                 <Grid.RowDefinitions>
@@ -43,6 +45,7 @@
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -55,11 +58,67 @@
                     SelectedItem="{Binding SelectedInstallation}"
                     Style="{StaticResource MaterialDesignFilledComboBox}" />
 
+                <!--  Backup Indicators (Full Backup / Custom DLLs)  -->
+                <StackPanel
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Margin="0,0,8,0"
+                    Orientation="Horizontal"
+                    Visibility="{Binding SelectedInstallation.IsBackup, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+
+                    <!--  Full Backup Badge  -->
+                    <Border
+                        Margin="0,0,8,0"
+                        Padding="8,4"
+                        VerticalAlignment="Center"
+                        Background="#2E7D32"
+                        CornerRadius="4"
+                        Visibility="{Binding SelectedInstallation.IsFullBackup, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Foreground="White"
+                                Kind="DatabaseCheck" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="11"
+                                FontWeight="Medium"
+                                Foreground="White"
+                                Text="Full Backup" />
+                        </StackPanel>
+                    </Border>
+
+                    <!--  Custom DLLs Warning  -->
+                    <Border
+                        Margin="0,0,8,0"
+                        Padding="8,4"
+                        VerticalAlignment="Center"
+                        Background="#F57C00"
+                        CornerRadius="4"
+                        ToolTip="{Binding SelectedInstallation.BackupInfo.CustomDlls, Converter={x:Static converters:ListToStringConverter.Instance}}"
+                        Visibility="{Binding SelectedInstallation.HasCustomDlls, Converter={StaticResource BooleanToVisibilityConverter}, FallbackValue=Collapsed}">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Foreground="White"
+                                Kind="FileCodeOutline" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="11"
+                                FontWeight="Medium"
+                                Foreground="White"
+                                Text="Custom DLLs" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
                 <!--  Locked Files Indicator  -->
                 <Border
                     Grid.Row="0"
-                    Grid.Column="1"
-                    Margin="0,0,48,0"
+                    Grid.Column="2"
+                    Margin="0,0,8,0"
                     HorizontalAlignment="Right"
                     CornerRadius="4"
                     IsHitTestVisible="False"
@@ -77,7 +136,22 @@
                     </StackPanel>
                 </Border>
 
-                <WrapPanel Grid.Column="2" VerticalAlignment="Center">
+                <WrapPanel Grid.Column="3" VerticalAlignment="Center">
+                    <Button
+                        Margin="0,0,8,0"
+                        Command="{Binding LoadMachineBackupCommand}"
+                        Style="{StaticResource MaterialDesignFloatingActionMiniLightButton}"
+                        ToolTip="Load .machine backup file (or drag &amp; drop)">
+                        <materialDesign:PackIcon Kind="FileUpload" />
+                    </Button>
+                    <Button
+                        Margin="0,0,8,0"
+                        Command="{Binding UnloadMachineBackupCommand}"
+                        Style="{StaticResource MaterialDesignFloatingActionMiniSecondaryLightButton}"
+                        ToolTip="Unload machine backup"
+                        Visibility="{Binding IsBackupLoaded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <materialDesign:PackIcon Kind="FileRemove" />
+                    </Button>
                     <Button
                         Margin="0,0,8,0"
                         Command="{Binding OpenTargetFolderCommand}"
@@ -640,6 +714,22 @@
                                                 Margin="2"
                                                 Background="Transparent"
                                                 ToolTip="{Binding RelativePath}">
+
+                                                <!--  Context Menu for Compare Against Version  -->
+                                                <Grid.ContextMenu>
+                                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" IsEnabled="{Binding IsFolder, Converter={x:Static converters:BooleanInversionConverter.Instance}}">
+                                                        <MenuItem Header="Compare against version" ItemsSource="{Binding DataContext.AvailableVersions, Source={x:Reference LockedFilesTreeView}}">
+                                                            <MenuItem.ItemContainerStyle>
+                                                                <Style BasedOn="{StaticResource MaterialDesignMenuItem}" TargetType="MenuItem">
+                                                                    <Setter Property="Header" Value="{Binding}" />
+                                                                    <Setter Property="Command" Value="{Binding DataContext.CompareLockedFileAgainstVersionCommand, Source={x:Reference LockedFilesTreeView}}" />
+                                                                    <Setter Property="CommandParameter" Value="{Binding}" />
+                                                                </Style>
+                                                            </MenuItem.ItemContainerStyle>
+                                                        </MenuItem>
+                                                    </ContextMenu>
+                                                </Grid.ContextMenu>
+
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="*" />
@@ -723,29 +813,186 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock
-                                            Grid.Column="0"
-                                            Padding="12,8"
-                                            FontWeight="Medium"
-                                            Foreground="White"
-                                            Text="{Binding SelectedLockedFile.RelativePath, FallbackValue='Select a locked file to view'}" />
 
-                                        <Button
+                                        <!--  File path and comparison info  -->
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                            <TextBlock
+                                                Padding="12,8"
+                                                FontWeight="Medium"
+                                                Foreground="White"
+                                                Text="{Binding SelectedLockedFile.RelativePath, FallbackValue='Select a locked file to view'}" />
+
+                                            <!--  Comparison badge when active  -->
+                                            <Border
+                                                Margin="0,4"
+                                                Padding="8,2"
+                                                VerticalAlignment="Center"
+                                                Background="#2196F3"
+                                                CornerRadius="4"
+                                                Visibility="{Binding IsLockedFileComparisonActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        FontSize="11"
+                                                        Foreground="White"
+                                                        Text="vs " />
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        FontSize="11"
+                                                        FontWeight="Bold"
+                                                        Foreground="White"
+                                                        Text="{Binding LockedFileComparisonVersion}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <!--  Diff stats when comparison active  -->
+                                        <StackPanel
                                             Grid.Column="1"
-                                            Margin="8,0,0,0"
-                                            Padding="8"
-                                            Command="{Binding ClearSelectedLockedFileCommand}"
-                                            Style="{StaticResource MaterialDesignFlatSecondaryDarkButton}"
-                                            Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
-                                            <materialDesign:PackIcon Kind="Close" />
-                                        </Button>
+                                            Margin="0,0,8,0"
+                                            Orientation="Horizontal"
+                                            Visibility="{Binding IsLockedFileComparisonActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock
+                                                Margin="8,0"
+                                                VerticalAlignment="Center"
+                                                Foreground="LightGreen"
+                                                Text="{Binding LockedFileComparisonResult.AddedLines, StringFormat='+{0}'}" />
+                                            <TextBlock
+                                                Margin="8,0"
+                                                VerticalAlignment="Center"
+                                                Foreground="LightCoral"
+                                                Text="{Binding LockedFileComparisonResult.RemovedLines, StringFormat='-{0}'}" />
+                                        </StackPanel>
 
+                                        <!--  Action buttons  -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                            <!--  Clear comparison button  -->
+                                            <Button
+                                                Margin="0,0,4,0"
+                                                Padding="8"
+                                                Command="{Binding ClearLockedFileComparisonCommand}"
+                                                Style="{StaticResource MaterialDesignFlatSecondaryDarkButton}"
+                                                ToolTip="Exit comparison view"
+                                                Visibility="{Binding IsLockedFileComparisonActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <materialDesign:PackIcon Kind="CompareRemove" />
+                                            </Button>
+
+                                            <!--  Close file button  -->
+                                            <Button
+                                                Padding="8"
+                                                Command="{Binding ClearSelectedLockedFileCommand}"
+                                                Style="{StaticResource MaterialDesignFlatSecondaryDarkButton}"
+                                                Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
+                                                <materialDesign:PackIcon Kind="Close" />
+                                            </Button>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
 
-                                <!--  File Content  -->
-                                <Grid Grid.Row="1" Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
+                                <!--  Diff View (when comparison active)  -->
+                                <ScrollViewer
+                                    Grid.Row="1"
+                                    HorizontalScrollBarVisibility="Auto"
+                                    VerticalScrollBarVisibility="Auto"
+                                    Visibility="{Binding IsLockedFileComparisonActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <ItemsControl ItemsSource="{Binding LockedFileComparisonResult.DiffLines}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid MinHeight="20">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="45" />
+                                                        <ColumnDefinition Width="45" />
+                                                        <ColumnDefinition Width="20" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.Style>
+                                                        <Style TargetType="Grid">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Type}" Value="Added">
+                                                                    <Setter Property="Background" Value="#1A4CAF50" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Type}" Value="Removed">
+                                                                    <Setter Property="Background" Value="#1AF44336" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Grid.Style>
+
+                                                    <!--  Left Line Number (Version)  -->
+                                                    <Border
+                                                        Grid.Column="0"
+                                                        BorderBrush="{DynamicResource MaterialDesign.Brush.TextBox.HoverBackground}"
+                                                        BorderThickness="0,0,1,0">
+                                                        <TextBlock
+                                                            Margin="4,0"
+                                                            HorizontalAlignment="Right"
+                                                            FontFamily="Consolas"
+                                                            FontSize="11"
+                                                            Foreground="Gray"
+                                                            Text="{Binding LeftLineNumber}" />
+                                                    </Border>
+
+                                                    <!--  Right Line Number (Installed)  -->
+                                                    <Border
+                                                        Grid.Column="1"
+                                                        BorderBrush="{DynamicResource MaterialDesign.Brush.TextBox.HoverBackground}"
+                                                        BorderThickness="0,0,1,0">
+                                                        <TextBlock
+                                                            Margin="4,0"
+                                                            HorizontalAlignment="Right"
+                                                            FontFamily="Consolas"
+                                                            FontSize="11"
+                                                            Foreground="Gray"
+                                                            Text="{Binding RightLineNumber}" />
+                                                    </Border>
+
+                                                    <!--  Change Indicator  -->
+                                                    <TextBlock
+                                                        Grid.Column="2"
+                                                        HorizontalAlignment="Center"
+                                                        FontFamily="Consolas"
+                                                        FontSize="12"
+                                                        FontWeight="Bold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Type}" Value="Added">
+                                                                        <Setter Property="Text" Value="+" />
+                                                                        <Setter Property="Foreground" Value="Green" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Type}" Value="Removed">
+                                                                        <Setter Property="Text" Value="-" />
+                                                                        <Setter Property="Foreground" Value="Red" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+
+                                                    <!--  Line Content  -->
+                                                    <TextBlock
+                                                        Grid.Column="3"
+                                                        Margin="8,0,4,0"
+                                                        FontFamily="Consolas"
+                                                        FontSize="12"
+                                                        Text="{Binding Content}"
+                                                        TextWrapping="NoWrap" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+
+                                <!--  Plain File Content (when no comparison)  -->
+                                <Grid Grid.Row="1">
+                                    <Grid.Visibility>
+                                        <MultiBinding Converter="{x:Static converters:AllTrueToVisibilityMultiConverter.Instance}">
+                                            <Binding Converter="{x:Static converters:NotNullToBooleanConverter.Instance}" Path="SelectedLockedFile" />
+                                            <Binding Converter="{x:Static converters:BooleanInversionConverter.Instance}" Path="IsLockedFileComparisonActive" />
+                                        </MultiBinding>
+                                    </Grid.Visibility>
 
                                     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                                         <TextBlock
@@ -761,12 +1008,11 @@
                                         VerticalAlignment="Bottom"
                                         Command="{Binding OpenLockedFileInExplorerCommand}"
                                         Style="{StaticResource MaterialDesignFloatingActionMiniLightButton}"
-                                        ToolTip="Open file in File Explorer"
-                                        Visibility="{Binding SelectedLockedFile, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
+                                        ToolTip="Open file in File Explorer">
                                         <materialDesign:PackIcon Kind="FolderOpen" />
                                     </Button>
-
                                 </Grid>
+
                                 <!--  Empty State  -->
                                 <StackPanel
                                     Grid.Row="1"
@@ -786,6 +1032,12 @@
                                         Opacity="0.5"
                                         Style="{StaticResource MaterialDesignHeadline6TextBlock}"
                                         Text="Select a file to view content" />
+                                    <TextBlock
+                                        Margin="0,8,0,0"
+                                        HorizontalAlignment="Center"
+                                        Opacity="0.4"
+                                        Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                                        Text="Right-click a file to compare against a version" />
                                 </StackPanel>
                             </Grid>
                         </materialDesign:Card>
@@ -1164,6 +1416,7 @@
                                     Height="44"
                                     Margin="8,0,4,8"
                                     Command="{Binding RestoreBackupCommand}"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignRaisedDarkButton}"
                                     ToolTip="Restore selected backup to target path">
                                     <StackPanel Orientation="Horizontal">
@@ -1181,6 +1434,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyJsonToDestinationCommand}"
                                     Content="Copy JSON to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="2"
@@ -1189,6 +1443,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyRetentionToDestinationCommand}"
                                     Content="Copy Retention to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="3"
@@ -1197,6 +1452,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyPythonToDestinationCommand}"
                                     Content="Copy Python to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="4"
@@ -1205,6 +1461,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyStubsToDestinationCommand}"
                                     Content="Copy Stubs to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="5"
@@ -1213,6 +1470,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyCameraFilesToDestinationCommand}"
                                     Content="Copy Camera to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="6"
@@ -1221,6 +1479,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyProgramFilesToDestinationCommand}"
                                     Content="Copy Program to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="7"
@@ -1229,6 +1488,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyInspectionFilesToDestinationCommand}"
                                     Content="Copy Inspection to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
                                 <Button
                                     Grid.Row="8"
@@ -1237,6 +1497,7 @@
                                     Margin="8,0,4,8"
                                     Command="{Binding CopyDllsToDestinationCommand}"
                                     Content="Copy DLLs to Target"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatLightButton}" />
 
 
@@ -1247,6 +1508,7 @@
                                     Height="44"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeleteAllCommand}"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignRaisedSecondaryButton}"
                                     ToolTip="Delete all data from target">
                                     <StackPanel Orientation="Horizontal">
@@ -1264,6 +1526,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeleteJsonCommand}"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
@@ -1279,6 +1542,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeleteRetentionCommand}"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
@@ -1294,6 +1558,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeletePythonCommand}"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
@@ -1309,6 +1574,7 @@
                                     Height="40"
                                     Margin="8,0,4,8"
                                     Command="{Binding DeletePageStubsCommand}"
+                                    IsEnabled="{Binding SelectedInstallation.IsBackup, Converter={x:Static converters:BooleanInversionConverter.Instance}}"
                                     Style="{StaticResource MaterialDesignFlatSecondaryButton}">
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon

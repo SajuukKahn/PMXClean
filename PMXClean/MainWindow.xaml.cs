@@ -49,4 +49,19 @@
                 viewModel.SelectedLockedFile = lockedFileItem;
             }
         }
+
+        /// <summary>
+        /// Handles drag-and-drop of .machine backup files onto the header.
+        /// </summary>
+        private async void ColorZone_Drop(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                if (files is not null && DataContext is MainViewModel viewModel)
+                {
+                    await viewModel.HandleFileDropAsync(files);
+                }
+            }
+        }
     }

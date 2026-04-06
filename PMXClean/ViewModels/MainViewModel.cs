@@ -141,6 +141,39 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial string SelectedLockedFileContent { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Comparison result for the selected locked file when comparing against a version.
+    /// </summary>
+    [ObservableProperty]
+    public partial FileComparisonResult? LockedFileComparisonResult { get; set; }
+
+    /// <summary>
+    /// The version being compared against for the locked file comparison.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? LockedFileComparisonVersion { get; set; }
+
+    /// <summary>
+    /// Whether the locked file viewer is showing a comparison.
+    /// </summary>
+    public bool IsLockedFileComparisonActive => LockedFileComparisonResult is not null;
+
+    /// <summary>
+    /// Currently loaded .machine backup info (displayed in header).
+    /// </summary>
+    [ObservableProperty]
+    public partial MachineBackupInfo? LoadedMachineBackup { get; set; }
+
+    /// <summary>
+    /// Whether a .machine backup is currently loaded as an installation target.
+    /// </summary>
+    public bool IsBackupLoaded => LoadedMachineBackup is not null;
+
+    /// <summary>
+    /// Whether the selected installation is a backup (deletion should be disabled).
+    /// </summary>
+    public bool IsSelectedInstallationABackup => SelectedInstallation?.IsBackup ?? false;
+
     #endregion
 
     #region Collections
@@ -182,6 +215,9 @@ public sealed partial class MainViewModel : ObservableObject
         SelectedLockedFile = null;
         SelectedLockedFileContent = string.Empty;
 
+        // Notify backup-related property changes
+        OnPropertyChanged(nameof(IsSelectedInstallationABackup));
+
         NotifyBackupAndCopyCommandsCanExecuteChanged();
         SetupComparisonPaths();
     }
@@ -197,6 +233,11 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateBackupInfo();
         NotifyRemoveCommandsCanExecuteChanged();
         NotifyBackupAndCopyCommandsCanExecuteChanged();
+    }
+
+    partial void OnLoadedMachineBackupChanged(MachineBackupInfo? value)
+    {
+        OnPropertyChanged(nameof(IsBackupLoaded));
     }
 
     #endregion
@@ -232,14 +273,25 @@ public sealed partial class MainViewModel : ObservableObject
     private void DiscoverInstallations()
     {
         StatusMessage = "Discovering PathMasterX installations...";
+
+        // Preserve any loaded backup installation
+        var backupInstallation = Installations.FirstOrDefault(i => i.IsBackup);
+
         Installations.Clear();
 
         SearchProgramFiles();
         SearchUserRepositories();
 
-        // Sort: Production first, then Development
+        // Sort: Production first, then Development, then Backup
         var sorted = Installations
-            .OrderBy(i => i.Type == InstallationType.ProgramFiles ? 0 : 1)
+            .OrderBy(i => i.Type switch
+            {
+                InstallationType.ProgramFiles => 0,
+                InstallationType.UserDevelopment => 1,
+                InstallationType.Custom => 2,
+                InstallationType.MachineBackup => 3,
+                _ => 4
+            })
             .ThenBy(i => i.DisplayName)
             .ToList();
 
@@ -247,6 +299,12 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var installation in sorted)
         {
             Installations.Add(installation);
+        }
+
+        // Re-add the backup installation if one was loaded
+        if (backupInstallation is not null)
+        {
+            Installations.Add(backupInstallation);
         }
 
         if (Installations.Count == 0)
@@ -384,7 +442,12 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            return $"{(type == InstallationType.ProgramFiles ? "[Production]" : "[Dev]")} {path}";
+            return type switch
+            {
+                InstallationType.ProgramFiles => $"[Production] {path}",
+                InstallationType.MachineBackup => $"[Backup] {path}",
+                _ => $"[Dev] {path}"
+            };
         }
         catch
         {
@@ -397,6 +460,15 @@ public sealed partial class MainViewModel : ObservableObject
         if (SelectedInstallation is null)
         {
             FileVersionText = string.Empty;
+            return;
+        }
+
+        // For backup installations, show version from Headers.data
+        if (SelectedInstallation.IsBackup && SelectedInstallation.BackupInfo is not null)
+        {
+            var backup = SelectedInstallation.BackupInfo;
+            string backupType = backup.IsFullBackup ? "Full Backup" : "Regular Backup";
+            FileVersionText = $"Backup Version: {backup.BackupVersion} ({backupType})";
             return;
         }
 
@@ -450,6 +522,141 @@ public sealed partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"Error opening folder: {ex.Message}";
+        }
+    }
+
+    #endregion
+
+    #region Machine Backup Loading
+
+    /// <summary>
+    /// Loads a .machine backup file and adds it to the installations list.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadMachineBackupAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select Machine Backup",
+            Filter = "Machine Backup Files (*.machine)|*.machine|All Files (*.*)|*.*",
+            FilterIndex = 1
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            await LoadMachineBackupFromPathAsync(dialog.FileName);
+        }
+    }
+
+    /// <summary>
+    /// Loads a .machine backup from a specific file path asynchronously.
+    /// </summary>
+    public async Task LoadMachineBackupFromPathAsync(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+        {
+            StatusMessage = "Error: Invalid backup file path";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Loading machine backup...";
+
+            // Validate the file
+            if (!MachineBackupService.IsValidMachineBackup(filePath))
+            {
+                StatusMessage = "Error: Invalid .machine backup file (missing Headers.data)";
+                return;
+            }
+
+            // Unload any existing backup first
+            await UnloadCurrentMachineBackupAsync();
+
+            // Load the backup asynchronously
+            var backupInfo = await MachineBackupService.LoadBackupAsync(filePath);
+            LoadedMachineBackup = backupInfo;
+
+            // Create installation entry for the backup
+            var backupInstallation = new PathMasterXInstallation
+            {
+                Path = backupInfo.ExtractedPath,
+                DisplayName = $"[Backup] {backupInfo.FileName} (v{backupInfo.BackupVersion})",
+                Type = InstallationType.MachineBackup,
+                BackupInfo = backupInfo
+            };
+
+            // Add to installations and select it
+            Installations.Add(backupInstallation);
+            SelectedInstallation = backupInstallation;
+
+            string backupType = backupInfo.IsFullBackup ? "Full Backup" : "Regular Backup";
+            string customDllWarning = backupInfo.HasCustomDlls 
+                ? $" - Contains {backupInfo.CustomDlls.Count} custom DLL(s)" 
+                : "";
+
+            StatusMessage = $"Loaded {backupType}: {backupInfo.FileName} (v{backupInfo.BackupVersion}){customDllWarning}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading backup: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Unloads the current machine backup and cleans up temporary files.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanUnloadMachineBackup))]
+    private async Task UnloadMachineBackupAsync()
+    {
+        await UnloadCurrentMachineBackupAsync();
+        StatusMessage = "Machine backup unloaded";
+    }
+
+    private bool CanUnloadMachineBackup() => LoadedMachineBackup is not null;
+
+    private async Task UnloadCurrentMachineBackupAsync()
+    {
+        if (LoadedMachineBackup is null)
+        {
+            return;
+        }
+
+        // If the backup installation is selected, clear selection
+        if (SelectedInstallation?.IsBackup == true && 
+            SelectedInstallation.BackupInfo == LoadedMachineBackup)
+        {
+            SelectedInstallation = Installations.FirstOrDefault(i => !i.IsBackup);
+        }
+
+        // Remove backup from installations list
+        var backupInstallation = Installations.FirstOrDefault(i => i.BackupInfo == LoadedMachineBackup);
+        if (backupInstallation is not null)
+        {
+            Installations.Remove(backupInstallation);
+        }
+
+        // Dispose and clean up temp files asynchronously
+        var tempPath = LoadedMachineBackup.ExtractedPath;
+        LoadedMachineBackup = null;
+        await MachineBackupService.CleanupTempFolderAsync(tempPath);
+    }
+
+    /// <summary>
+    /// Handles drag-and-drop of .machine files asynchronously.
+    /// </summary>
+    public async Task HandleFileDropAsync(string[] files)
+    {
+        var machineFile = files.FirstOrDefault(f => 
+            f.EndsWith(".machine", StringComparison.OrdinalIgnoreCase));
+
+        if (machineFile is not null)
+        {
+            await LoadMachineBackupFromPathAsync(machineFile);
+        }
+        else
+        {
+            StatusMessage = "Error: No .machine backup file found in dropped items";
         }
     }
 
@@ -532,11 +739,16 @@ public sealed partial class MainViewModel : ObservableObject
                 return;
             }
 
+            // Determine the right label based on whether target is a backup
+            string targetLabel = SelectedInstallation.IsBackup 
+                ? $"Backup ({SelectedInstallation.BackupInfo?.BackupVersion ?? "?"})"
+                : "Installed";
+
             ComparisonViewModel.SetupComparison(
                 sourceDir,
                 SelectedInstallation.Path,
                 SelectedVersion,
-                "Installed");
+                targetLabel);
         }
         catch (Exception ex)
         {
@@ -564,20 +776,40 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
-            string exePath = Path.Combine(SelectedInstallation.Path, "PVA.PathMasterX.exe");
-            if (!File.Exists(exePath))
+            string? fileVersion = null;
+
+            // No machine backup loaded for comparison, match the executable version directly from the target path
+            if (!SelectedInstallation.IsBackup)
             {
-                StatusMessage = "Error: Target executable not found";
-                return;
+                string exePath = Path.Combine(SelectedInstallation.Path, "PVA.PathMasterX.exe");
+                if (!File.Exists(exePath))
+                {
+                    StatusMessage = "Error: Target executable not found";
+                    return;
+                }
+
+                var versionInfo = FileVersionInfo.GetVersionInfo(exePath);
+                fileVersion = versionInfo.FileVersion;
+
+                if (string.IsNullOrEmpty(fileVersion))
+                {
+                    StatusMessage = "Error: Could not read version from executable";
+                    return;
+                }
             }
 
-            var versionInfo = FileVersionInfo.GetVersionInfo(exePath);
-            string? fileVersion = versionInfo.FileVersion;
-
-            if (string.IsNullOrEmpty(fileVersion))
+            // a machine backup is loaded, extract the version from Headers.data
+            else
             {
-                StatusMessage = "Error: Could not read version from executable";
-                return;
+                if (SelectedInstallation.BackupInfo is not null)
+                {
+                    fileVersion = SelectedInstallation.BackupInfo.BackupVersion;
+                }
+                else
+                {
+                    StatusMessage = "Error: Backup information is missing";
+                    return;
+                }
             }
 
             var matchedVersion = AvailableVersions.FirstOrDefault(v =>
@@ -878,6 +1110,11 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     partial void OnSelectedLockedFileChanged(LockedFileItem? value)
     {
+        // Clear any active comparison when file selection changes
+        LockedFileComparisonResult = null;
+        LockedFileComparisonVersion = null;
+        OnPropertyChanged(nameof(IsLockedFileComparisonActive));
+
         if (value is null || value.IsFolder)
         {
             SelectedLockedFileContent = string.Empty;
@@ -934,6 +1171,120 @@ public sealed partial class MainViewModel : ObservableObject
     private void ClearSelectedLockedFile()
     {
         SelectedLockedFile = null;
+        ClearLockedFileComparison();
+    }
+
+    /// <summary>
+    /// Compares the selected locked file against a specific version from embedded resources.
+    /// </summary>
+    [RelayCommand]
+    private void CompareLockedFileAgainstVersion(string? version)
+    {
+        if (string.IsNullOrEmpty(version))
+        {
+            StatusMessage = "Error: No version specified for comparison";
+            return;
+        }
+
+        if (SelectedLockedFile is null || SelectedLockedFile.IsFolder)
+        {
+            StatusMessage = "Error: Please select a file (not a folder) to compare";
+            return;
+        }
+
+        if (SelectedInstallation is null)
+        {
+            StatusMessage = "Error: No installation selected";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = $"Comparing {SelectedLockedFile.Name} against version {version}...";
+
+            // Get the relative path of the file from the installation root
+            string relativePath = SelectedLockedFile.RelativePath;
+
+            // Build the embedded resource name for this file in the specified version
+            string resourceName = $"PMXVersions\\{version}\\{relativePath}";
+
+            // Extract the version file to a temp location for comparison
+            string? versionFilePath = ExtractEmbeddedFileForComparison(resourceName, version, relativePath);
+
+            // Perform the comparison
+            LockedFileComparisonResult = PythonComparisonService.CompareFiles(
+                versionFilePath,
+                SelectedLockedFile.FullPath,
+                relativePath);
+
+            LockedFileComparisonVersion = version;
+            OnPropertyChanged(nameof(IsLockedFileComparisonActive));
+
+            string statusDesc = LockedFileComparisonResult.Status switch
+            {
+                FileComparisonStatus.Same => "Files are identical",
+                FileComparisonStatus.Different => $"Files differ ({LockedFileComparisonResult.AddedLines} added, {LockedFileComparisonResult.RemovedLines} removed)",
+                FileComparisonStatus.LeftOnly => "File only exists in version (not in installation)",
+                FileComparisonStatus.RightOnly => "File only exists in installation (not in version)",
+                _ => "Comparison complete"
+            };
+
+            StatusMessage = $"Compared {SelectedLockedFile.Name} vs {version}: {statusDesc}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error comparing file: {ex.Message}";
+            LockedFileComparisonResult = null;
+            LockedFileComparisonVersion = null;
+            OnPropertyChanged(nameof(IsLockedFileComparisonActive));
+        }
+    }
+
+    /// <summary>
+    /// Extracts an embedded resource file to a temporary location for comparison.
+    /// </summary>
+    private string? ExtractEmbeddedFileForComparison(string resourceName, string version, string relativePath)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceNames = assembly.GetManifestResourceNames();
+
+        // Find a matching resource (case-insensitive)
+        string? matchingResource = resourceNames.FirstOrDefault(r =>
+            r.Equals(resourceName, StringComparison.OrdinalIgnoreCase));
+
+        if (matchingResource is null)
+        {
+            // File doesn't exist in the version - return null
+            return null;
+        }
+
+        // Create temp file path
+        string tempDir = Path.Combine(Path.GetTempPath(), "PMXClean_Compare", "locked_file_compare", version);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(tempDir, relativePath))!);
+        string tempFilePath = Path.Combine(tempDir, relativePath);
+
+        // Extract the resource
+        using var stream = assembly.GetManifestResourceStream(matchingResource);
+        if (stream is null)
+        {
+            return null;
+        }
+
+        using var fileStream = File.Create(tempFilePath);
+        stream.CopyTo(fileStream);
+
+        return tempFilePath;
+    }
+
+    /// <summary>
+    /// Clears the locked file comparison and returns to plain content view.
+    /// </summary>
+    [RelayCommand]
+    private void ClearLockedFileComparison()
+    {
+        LockedFileComparisonResult = null;
+        LockedFileComparisonVersion = null;
+        OnPropertyChanged(nameof(IsLockedFileComparisonActive));
     }
 
     /// <summary>
@@ -1439,22 +1790,22 @@ public sealed partial class MainViewModel : ObservableObject
 
     #region Copy to Destination Commands
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyJsonToDestinationAsync() => await CopyToDestinationByPatternAsync("*.json", "JSON");
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyRetentionToDestinationAsync() => await CopyToDestinationByPatternAsync("*.retention", "Retention");
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyPythonToDestinationAsync() => await CopyToDestinationByPatternAsync("*.py", "Python");
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyDllsToDestinationAsync() => await CopyToDestinationByPatternAsync("*.DLL", "DLLs");
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyStubsToDestinationAsync() => await CopyToDestinationByPatternAsync("*.stub", "Page Stubs");
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyCameraFilesToDestinationAsync()
     {
         if (string.IsNullOrEmpty(SelectedBackup))
@@ -1515,7 +1866,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyProgramFilesToDestinationAsync()
     {
         if (!ValidateBackupSelected())
@@ -1526,7 +1877,7 @@ public sealed partial class MainViewModel : ObservableObject
         await CopyFeatureFolderToDestinationAsync("Program", "Program");
     }
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task CopyInspectionFilesToDestinationAsync()
     {
         if (!ValidateBackupSelected())
@@ -1604,8 +1955,15 @@ public sealed partial class MainViewModel : ObservableObject
                     return;
                 }
 
-                await CopyFilesByPatternAsync(backupPath, SelectedInstallation.Path, pattern);
-                StatusMessage = $"{fileType} copied to destination";
+                bool anyFilesCopied = await CopyFilesByPatternAsync(backupPath, SelectedInstallation.Path, pattern);
+                if (anyFilesCopied)
+                {
+                    StatusMessage = $"{fileType} copied to destination";
+                }
+                else
+                {
+                    StatusMessage = $"No {fileType} files found to copy";
+                }
             }
             catch (Exception ex)
             {
@@ -1778,7 +2136,7 @@ public sealed partial class MainViewModel : ObservableObject
                 return false;
             }
 
-            string cameraBackupPath = Path.Combine(_backupsRootDirectory, SelectedBackup, "Device", "Camera");
+            string cameraBackupPath = Path.Combine(_backupsRootDirectory, SelectedBackup, "Device", "Camera", "Drivers");
 
             if (!Directory.Exists(cameraBackupPath))
             {
@@ -1787,9 +2145,10 @@ public sealed partial class MainViewModel : ObservableObject
 
             try
             {
-                string[] excludedExtensions = [".dll", ".json", ".py"];
-                return Directory.GetFiles(cameraBackupPath, "*", SearchOption.AllDirectories)
-                    .Any(f => !excludedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+                return Directory.GetFiles(cameraBackupPath, "*.MPAT", SearchOption.AllDirectories).Length > 0 ||
+                Directory.GetFiles(cameraBackupPath, "*.mca", SearchOption.AllDirectories).Length > 0 ||
+                Directory.GetFiles(cameraBackupPath, "*.tiff", SearchOption.AllDirectories).Length > 0 ||
+                Directory.GetFiles(cameraBackupPath, "*.mim", SearchOption.AllDirectories).Length > 0;
             }
             catch
             {
@@ -1813,7 +2172,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             try
             {
-                return Directory.GetFiles(featureBackupPath, "*", SearchOption.AllDirectories).Length > 0;
+                return Directory.GetFiles(featureBackupPath, "*.program", SearchOption.AllDirectories).Length > 0;
             }
             catch
             {
@@ -1918,15 +2277,23 @@ public sealed partial class MainViewModel : ObservableObject
                 Directory.CreateDirectory(backupPath);
             }
 
+            bool anyFilesCopied = false;
             await Task.Run(() =>
             {
                 CopyDirectoryStructure(SelectedInstallation!.Path, backupPath);
-                CopyFilesByPattern(SelectedInstallation.Path, backupPath, pattern);
+                anyFilesCopied = CopyFilesByPattern(SelectedInstallation.Path, backupPath, pattern);
             });
 
             UpdateBackupInfo();
             NotifyRemoveCommandsCanExecuteChanged();
-            StatusMessage = $"{fileType} backup complete";
+            if (anyFilesCopied)
+            {
+                StatusMessage = $"{fileType} backup complete";
+            }
+            else
+            {
+                StatusMessage = $"No {fileType} files found to backup";
+            }
         }
         catch (Exception ex)
         {
@@ -1938,6 +2305,12 @@ public sealed partial class MainViewModel : ObservableObject
     /// Determines whether backup or copy-to-destination operations can execute.
     /// </summary>
     private bool CanBackupOrCopy() => !string.IsNullOrEmpty(SelectedBackup) && SelectedInstallation is not null;
+
+    /// <summary>
+    /// Determines whether copy-to-destination (write) operations can execute.
+    /// Disabled when target is a .machine backup (read-only).
+    /// </summary>
+    private bool CanCopyToDestination() => CanBackupOrCopy() && !IsSelectedInstallationABackup;
 
     /// <summary>
     /// Notifies all backup and copy-to-destination commands to re-evaluate their CanExecute state.
@@ -1961,9 +2334,11 @@ public sealed partial class MainViewModel : ObservableObject
         CopyCameraFilesToDestinationCommand.NotifyCanExecuteChanged();
         CopyProgramFilesToDestinationCommand.NotifyCanExecuteChanged();
         CopyInspectionFilesToDestinationCommand.NotifyCanExecuteChanged();
+        RestoreBackupCommand.NotifyCanExecuteChanged();
+        UnloadMachineBackupCommand.NotifyCanExecuteChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(CanBackupOrCopy))]
+    [RelayCommand(CanExecute = nameof(CanCopyToDestination))]
     private async Task RestoreBackupAsync()
     {
         if (string.IsNullOrEmpty(SelectedBackup))
@@ -3327,8 +3702,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private static void CopyFilesByPattern(string sourceDir, string targetDir, string pattern)
+    private static bool CopyFilesByPattern(string sourceDir, string targetDir, string pattern)
     {
+        bool anyFilesCopied = false;
         foreach (string file in Directory.GetFiles(sourceDir, pattern, SearchOption.AllDirectories))
         {
             string relativePath = Path.GetRelativePath(sourceDir, file);
@@ -3346,10 +3722,13 @@ public sealed partial class MainViewModel : ObservableObject
             }
 
             File.Copy(file, targetFile, true);
+            anyFilesCopied = true;
         }
+
+        return anyFilesCopied;
     }
 
-    private static Task CopyFilesByPatternAsync(string sourceDir, string targetDir, string pattern)
+    private static Task<bool> CopyFilesByPatternAsync(string sourceDir, string targetDir, string pattern)
     {
         return Task.Run(() => CopyFilesByPattern(sourceDir, targetDir, pattern));
     }

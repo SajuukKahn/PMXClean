@@ -24,6 +24,20 @@ namespace PMXClean.Converters
         }
     }
 
+    public class BooleanInversionConverter: IValueConverter
+    {
+        public static BooleanInversionConverter Instance { get; } = new();
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value is bool boolValue ? !boolValue : false;
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     /// <summary>
     /// Converts a non-null value to Visible, null to Collapsed.
     /// </summary>
@@ -255,6 +269,79 @@ namespace PMXClean.Converters
         }
 
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts a list of strings to a newline-separated string for tooltip display.
+    /// </summary>
+    public class ListToStringConverter : IValueConverter
+    {
+        public static ListToStringConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            if (value is IEnumerable<string> list)
+            {
+                var items = list.ToList();
+                if (items.Count == 0)
+                {
+                    return "No items";
+                }
+
+                return string.Join(Environment.NewLine, items);
+            }
+
+            return string.Empty;
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts a non-null value to true, null to false.
+    /// </summary>
+    public class NotNullToBooleanConverter : IValueConverter
+    {
+        public static NotNullToBooleanConverter Instance { get; } = new();
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value is not null;
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Multi-value converter that returns Visible if all boolean inputs are true, Collapsed otherwise.
+    /// </summary>
+    public class AllTrueToVisibilityMultiConverter : IMultiValueConverter
+    {
+        public static AllTrueToVisibilityMultiConverter Instance { get; } = new();
+
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            foreach (var value in values)
+            {
+                if (value is not bool boolValue || !boolValue)
+                {
+                    return Visibility.Collapsed;
+                }
+            }
+
+            return Visibility.Visible;
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
         {
             throw new NotImplementedException();
         }
