@@ -8,12 +8,7 @@ using System.Windows.Controls;
 /// </summary>
 public static class FocusSelectAllBehavior
 {
-    public static readonly DependencyProperty IsFocusedProperty =
-        DependencyProperty.RegisterAttached(
-            "IsFocused",
-            typeof(bool),
-            typeof(FocusSelectAllBehavior),
-            new PropertyMetadata(false, OnIsFocusedChanged));
+    public static readonly DependencyProperty IsFocusedProperty = DependencyProperty.RegisterAttached("IsFocused", typeof(bool), typeof(FocusSelectAllBehavior), new PropertyMetadata(false, OnIsFocusedChanged));
 
     public static bool GetIsFocused(DependencyObject obj) => (bool)obj.GetValue(IsFocusedProperty);
 

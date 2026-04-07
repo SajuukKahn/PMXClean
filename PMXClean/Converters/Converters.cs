@@ -24,12 +24,15 @@ namespace PMXClean.Converters
         }
     }
 
+    /// <summary>
+    /// Inverts a boolean value.
+    /// </summary>
     public class BooleanInversionConverter: IValueConverter
     {
         public static BooleanInversionConverter Instance { get; } = new();
         public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            return value is bool boolValue ? !boolValue : false;
+            return value is bool boolValue && !boolValue;
         }
 
         public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
