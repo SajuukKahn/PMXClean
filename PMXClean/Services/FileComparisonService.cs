@@ -1,5 +1,7 @@
 namespace PMXClean.Services;
 
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
@@ -15,7 +17,7 @@ public static class FileComparisonService
     /// <summary>
     /// Supported file extensions for comparison.
     /// </summary>
-    private static readonly string[] SupportedExtensions = ["*.py", "*.json"];
+    private static readonly string[] SupportedExtensions = ["*.py" ]; //["*.py", "*.json"];
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     /// <summary>
@@ -97,8 +99,11 @@ public static class FileComparisonService
             }
         }
 
-        // Process files
-        foreach (var fileName in allFiles)
+        // Process files in parallel for better performance
+        var fileList = allFiles.ToList();
+        var fileItems = new ConcurrentBag<ComparisonItem>();
+
+        Parallel.ForEach(fileList, fileName =>
         {
             string fileRelativePath = string.IsNullOrEmpty(relativePath) ? fileName! : Path.Combine(relativePath, fileName!);
             string? leftFilePath = leftFiles.Contains(fileName!) ? Path.Combine(leftDir, fileName!) : null;
@@ -142,25 +147,46 @@ public static class FileComparisonService
                 fileItem.IsLockedRight = IsFileLocked(rightFilePath);
             }
 
+            fileItems.Add(fileItem);
+        });
+
+        // Add sorted results to maintain consistent ordering
+        foreach (var fileItem in fileItems.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+        {
             items.Add(fileItem);
         }
     }
 
     /// <summary>
     /// Checks if a file's first line contains a lock directive.
+    /// Uses buffered reading to only read first line without loading entire file.
     /// </summary>
     public static bool IsFileLocked(string filePath)
     {
         try
         {
-            using var reader = new StreamReader(filePath);
-            string? firstLine = reader.ReadLine();
-            if (firstLine is null)
+            // Read only first 256 bytes - sufficient for lock pattern check
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(256);
+            try
             {
-                return false;
-            }
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 256, FileOptions.SequentialScan);
+                int bytesRead = fs.Read(buffer, 0, 256);
+                if (bytesRead == 0)
+                {
+                    return false;
+                }
 
-            return firstLine.Contains(LockPattern, StringComparison.OrdinalIgnoreCase);
+                // Find newline or use all bytes read
+                int lineEnd = Array.IndexOf(buffer, (byte)'\n', 0, bytesRead);
+                int length = lineEnd >= 0 ? lineEnd : bytesRead;
+
+                ReadOnlySpan<char> firstLine = System.Text.Encoding.UTF8.GetString(buffer.AsSpan(0, length));
+                return firstLine.Contains(LockPattern, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
         catch
         {
@@ -168,8 +194,10 @@ public static class FileComparisonService
         }
     }
 
+    private const int CompareBufferSize = 81920; // 80KB buffer for file comparison
+
     /// <summary>
-    /// Quickly checks if two files have identical content.
+    /// Quickly checks if two files have identical content using buffered byte comparison.
     /// </summary>
     private static bool AreFilesIdentical(string path1, string path2)
     {
@@ -184,11 +212,42 @@ public static class FileComparisonService
                 return false;
             }
 
-            // Compare content
-            string content1 = File.ReadAllText(path1);
-            string content2 = File.ReadAllText(path2);
+            // Empty files are identical
+            if (info1.Length == 0)
+            {
+                return true;
+            }
 
-            return content1 == content2;
+            // Use buffered byte comparison - much faster than string comparison
+            byte[] buffer1 = ArrayPool<byte>.Shared.Rent(CompareBufferSize);
+            byte[] buffer2 = ArrayPool<byte>.Shared.Rent(CompareBufferSize);
+            try
+            {
+                using var fs1 = new FileStream(path1, FileMode.Open, FileAccess.Read, FileShare.Read, CompareBufferSize, FileOptions.SequentialScan);
+                using var fs2 = new FileStream(path2, FileMode.Open, FileAccess.Read, FileShare.Read, CompareBufferSize, FileOptions.SequentialScan);
+
+                int bytesRead1, bytesRead2;
+                while ((bytesRead1 = fs1.Read(buffer1, 0, CompareBufferSize)) > 0)
+                {
+                    bytesRead2 = fs2.Read(buffer2, 0, CompareBufferSize);
+                    if (bytesRead1 != bytesRead2)
+                    {
+                        return false;
+                    }
+
+                    if (!buffer1.AsSpan(0, bytesRead1).SequenceEqual(buffer2.AsSpan(0, bytesRead2)))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer1);
+                ArrayPool<byte>.Shared.Return(buffer2);
+            }
         }
         catch
         {
@@ -275,24 +334,37 @@ public static class FileComparisonService
 
     /// <summary>
     /// Generates a unified diff using the LCS (Longest Common Subsequence) algorithm.
+    /// Uses pre-computed hash codes for O(1) line comparison.
     /// </summary>
     private static ObservableCollection<DiffLine> GenerateDiff(string[] leftLines, string[] rightLines)
     {
-        var result = new ObservableCollection<DiffLine>();
+        // Pre-compute hash codes for fast comparison
+        int[] leftHashes = new int[leftLines.Length];
+        int[] rightHashes = new int[rightLines.Length];
 
-        // Build LCS table
-        int[,] lcs = BuildLcsTable(leftLines, rightLines);
+        for (int k = 0; k < leftLines.Length; k++)
+        {
+            leftHashes[k] = leftLines[k].GetHashCode();
+        }
 
-        // Backtrack to generate diff
+        for (int k = 0; k < rightLines.Length; k++)
+        {
+            rightHashes[k] = rightLines[k].GetHashCode();
+        }
+
+        // Build LCS table using hash comparison
+        int[,] lcs = BuildLcsTableWithHashes(leftLines, rightLines, leftHashes, rightHashes);
+
+        // Backtrack to generate diff - pre-allocate capacity
         int i = leftLines.Length;
         int j = rightLines.Length;
-        var tempResult = new List<DiffLine>();
+        var tempResult = new List<DiffLine>(leftLines.Length + rightLines.Length);
 
         while (i > 0 || j > 0)
         {
-            if (i > 0 && j > 0 && leftLines[i - 1] == rightLines[j - 1])
+            if (i > 0 && j > 0 && leftHashes[i - 1] == rightHashes[j - 1] && leftLines[i - 1] == rightLines[j - 1])
             {
-                // Lines are the same
+                // Lines are the same (hash match + string equality for collision safety)
                 tempResult.Add(new DiffLine
                 {
                     Type = DiffLineType.Unchanged,
@@ -329,21 +401,16 @@ public static class FileComparisonService
             }
         }
 
-        // Reverse to get correct order
+        // Reverse and create ObservableCollection in one shot
         tempResult.Reverse();
-
-        foreach (var line in tempResult)
-        {
-            result.Add(line);
-        }
-
-        return result;
+        return new ObservableCollection<DiffLine>(tempResult);
     }
 
     /// <summary>
-    /// Builds the LCS (Longest Common Subsequence) table for diff calculation.
+    /// Builds the LCS (Longest Common Subsequence) table using pre-computed hash codes.
+    /// Hash comparison is O(1) vs O(n) for string comparison.
     /// </summary>
-    private static int[,] BuildLcsTable(string[] left, string[] right)
+    private static int[,] BuildLcsTableWithHashes(string[] left, string[] right, int[] leftHashes, int[] rightHashes)
     {
         int m = left.Length;
         int n = right.Length;
@@ -353,7 +420,8 @@ public static class FileComparisonService
         {
             for (int j = 1; j <= n; j++)
             {
-                if (left[i - 1] == right[j - 1])
+                // Fast hash comparison first, then string equality only on hash match
+                if (leftHashes[i - 1] == rightHashes[j - 1] && left[i - 1] == right[j - 1])
                 {
                     table[i, j] = table[i - 1, j - 1] + 1;
                 }

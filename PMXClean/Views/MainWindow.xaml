@@ -647,11 +647,11 @@
                                             Visibility="{Binding ComparisonViewModel.CurrentFileComparison, Converter={x:Static converters:NotNullToVisibilityConverter.Instance}}">
                                             <TextBlock
                                                 Margin="8,0"
-                                                Foreground="LightGreen"
+                                                Foreground="GreenYellow"
                                                 Text="{Binding ComparisonViewModel.CurrentFileComparison.AddedLines, StringFormat='+{0}'}" />
                                             <TextBlock
                                                 Margin="8,0"
-                                                Foreground="LightCoral"
+                                                Foreground="#700"
                                                 Text="{Binding ComparisonViewModel.CurrentFileComparison.RemovedLines, StringFormat='-{0}'}" />
                                         </StackPanel>
                                     </Grid>
