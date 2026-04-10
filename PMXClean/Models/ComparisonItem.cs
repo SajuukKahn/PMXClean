@@ -25,6 +25,9 @@ public sealed partial class ComparisonItem : ObservableObject
     public partial bool IsFolder { get; set; }
 
     [ObservableProperty]
+    public partial bool IsPythonScript { get; set; }
+
+    [ObservableProperty]
     public partial bool IsExpanded { get; set; }
 
     [ObservableProperty]

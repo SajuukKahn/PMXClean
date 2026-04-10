@@ -1212,7 +1212,7 @@ public sealed partial class MainViewModel : ObservableObject
             string? versionFilePath = ExtractEmbeddedFileForComparison(resourceName, version, relativePath);
 
             // Perform the comparison
-            LockedFileComparisonResult = PythonComparisonService.CompareFiles(
+            LockedFileComparisonResult = FileComparisonService.CompareFiles(
                 versionFilePath,
                 SelectedLockedFile.FullPath,
                 relativePath);

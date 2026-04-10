@@ -2,17 +2,24 @@ namespace PMXClean.Services;
 
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using PMXClean.Models;
 
 /// <summary>
-/// Service for comparing Python files and folders using LCS-based diff algorithm.
+/// Service for comparing Python and JSON files using LCS-based diff algorithm.
 /// </summary>
-public static class PythonComparisonService
+public static class FileComparisonService
 {
     private const string LockPattern = "#lock";
 
     /// <summary>
-    /// Compares two folders and builds a tree of comparison items for Python files.
+    /// Supported file extensions for comparison.
+    /// </summary>
+    private static readonly string[] SupportedExtensions = ["*.py", "*.json"];
+    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Compares two folders and builds a tree of comparison items for supported files (Python and JSON).
     /// </summary>
     public static ObservableCollection<ComparisonItem> CompareDirectories(string leftPath, string rightPath)
     {
@@ -36,12 +43,12 @@ public static class PythonComparisonService
         bool leftExists = Directory.Exists(leftDir);
         bool rightExists = Directory.Exists(rightDir);
 
-        // Get all Python files from both sides
+        // Get all supported files from both sides (Python and JSON)
         var leftFiles = leftExists 
-            ? Directory.GetFiles(leftDir, "*.py").Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ? GetSupportedFiles(leftDir).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
         var rightFiles = rightExists 
-            ? Directory.GetFiles(rightDir, "*.py").Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ? GetSupportedFiles(rightDir).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
 
         // Get all subdirectories from both sides
@@ -71,13 +78,13 @@ public static class PythonComparisonService
                 RelativePath = dirRelativePath,
                 LeftFullPath = Directory.Exists(leftDirPath) ? leftDirPath : null,
                 RightFullPath = Directory.Exists(rightDirPath) ? rightDirPath : null,
-                IsFolder = true
+                IsFolder = true,
             };
 
             // Recursively build children
             BuildComparisonTree(leftBasePath, rightBasePath, dirRelativePath, folderItem.Children);
 
-            // Only add folder if it contains Python files (directly or in subfolders)
+            // Only add folder if it contains supported files (directly or in subfolders)
             if (folderItem.Children.Count > 0)
             {
                 // Set folder status based on children
@@ -103,7 +110,8 @@ public static class PythonComparisonService
                 RelativePath = fileRelativePath,
                 LeftFullPath = leftFilePath,
                 RightFullPath = rightFilePath,
-                IsFolder = false
+                IsFolder = false,
+                IsPythonScript = Path.GetExtension(fileName!).Contains("py", StringComparison.OrdinalIgnoreCase),
             };
 
             // Determine status
@@ -190,6 +198,7 @@ public static class PythonComparisonService
 
     /// <summary>
     /// Compares two files and generates a detailed diff result.
+    /// JSON files are automatically prettified for readable comparison.
     /// </summary>
     public static FileComparisonResult CompareFiles(string? leftPath, string? rightPath, string relativePath)
     {
@@ -207,12 +216,12 @@ public static class PythonComparisonService
 
         if (leftExists)
         {
-            leftLines = File.ReadAllLines(leftPath!);
+            leftLines = ReadFileLines(leftPath!);
         }
 
         if (rightExists)
         {
-            rightLines = File.ReadAllLines(rightPath!);
+            rightLines = ReadFileLines(rightPath!);
         }
 
         // Determine status
@@ -379,5 +388,61 @@ public static class PythonComparisonService
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Gets all file names with supported extensions from a directory.
+    /// </summary>
+    private static IEnumerable<string?> GetSupportedFiles(string directory)
+    {
+        return SupportedExtensions
+            .SelectMany(ext => Directory.GetFiles(directory, ext))
+            .Select(Path.GetFileName);
+    }
+
+    /// <summary>
+    /// Checks if a file is a JSON file based on extension.
+    /// </summary>
+    private static bool IsJsonFile(string? filePath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return false;
+        }
+
+        return Path.GetExtension(filePath).Equals(".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Prettifies minified JSON content for readable diff comparison.
+    /// </summary>
+    private static string PrettifyJson(string content)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            return JsonSerializer.Serialize(doc.RootElement, Options);
+        }
+        catch
+        {
+            // If JSON parsing fails, return original content
+            return content;
+        }
+    }
+
+    /// <summary>
+    /// Reads file content, prettifying JSON files for better diff comparison.
+    /// </summary>
+    private static string[] ReadFileLines(string filePath)
+    {
+        if (IsJsonFile(filePath))
+        {
+            string content = File.ReadAllText(filePath);
+            string[] splitContent = content.Split(Environment.NewLine);
+            string prettified = PrettifyJson(splitContent[1]);         
+            return [.. prettified.Split(Environment.NewLine, StringSplitOptions.None).Where(line => !string.IsNullOrEmpty(line) || line == string.Empty)];
+        }
+
+        return File.ReadAllLines(filePath);
     }
 }

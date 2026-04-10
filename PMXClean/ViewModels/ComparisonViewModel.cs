@@ -8,7 +8,7 @@ using PMXClean.Models;
 using PMXClean.Services;
 
 /// <summary>
-/// ViewModel for the Python file comparison feature.
+/// ViewModel for the file comparison feature (Python and JSON files).
 /// </summary>
 public sealed partial class ComparisonViewModel : ObservableObject
 {
@@ -71,7 +71,7 @@ public sealed partial class ComparisonViewModel : ObservableObject
         }
 
         // Compare the selected file
-        CurrentFileComparison = PythonComparisonService.CompareFiles(
+        CurrentFileComparison = FileComparisonService.CompareFiles(
             value.LeftFullPath,
             value.RightFullPath,
             value.RelativePath);
@@ -117,7 +117,7 @@ public sealed partial class ComparisonViewModel : ObservableObject
 
         try
         {
-            var items = await Task.Run(() => PythonComparisonService.CompareDirectories(LeftPath, RightPath));
+            var items = await Task.Run(() => FileComparisonService.CompareDirectories(LeftPath, RightPath));
 
             ComparisonItems = items;
 

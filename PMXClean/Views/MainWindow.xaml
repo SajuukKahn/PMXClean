@@ -511,9 +511,20 @@
                                                                     </MultiDataTrigger.Conditions>
                                                                     <Setter Property="Foreground" Value="Orange" />
                                                                 </MultiDataTrigger>
-                                                                <DataTrigger Binding="{Binding IsFolder}" Value="False">
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsFolder}" Value="False" />
+                                                                        <Condition Binding="{Binding IsPythonScript}" Value="True" />
+                                                                    </MultiDataTrigger.Conditions>
                                                                     <Setter Property="Kind" Value="LanguagePython" />
-                                                                </DataTrigger>
+                                                                </MultiDataTrigger>
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsFolder}" Value="False" />
+                                                                        <Condition Binding="{Binding IsPythonScript}" Value="False" />
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Kind" Value="File" />
+                                                                </MultiDataTrigger>
                                                                 <MultiDataTrigger>
                                                                     <MultiDataTrigger.Conditions>
                                                                         <Condition Binding="{Binding IsFolder}" Value="False" />
