@@ -1,5 +1,4 @@
-
-<Window
+﻿<Window
     x:Class="PMXClean.Views.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -604,8 +603,9 @@
 
                         <GridSplitter
                             Grid.Column="1"
-                            Width="12"
-                            Margin="0" />
+                            Width="10"
+                            HorizontalAlignment="Center"
+                            ResizeBehavior="PreviousAndNext" />
 
                         <!--  Diff Viewer  -->
                         <materialDesign:Card Grid.Column="2">
@@ -770,11 +770,12 @@
                         Visibility="{Binding IsComparisonVisible, Converter={x:Static converters:InverseBooleanToVisibilityConverter.Instance}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="250" />
+                            <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="2*" MinWidth="400" />
                         </Grid.ColumnDefinitions>
 
                         <!--  Locked Files Tree  -->
-                        <materialDesign:Card Grid.Column="0" Margin="0,0,8,0">
+                        <materialDesign:Card Grid.Column="0">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
@@ -922,8 +923,13 @@
                             </Grid>
                         </materialDesign:Card>
 
+                        <GridSplitter
+                            Grid.Column="1"
+                            Width="10"
+                            HorizontalAlignment="Center"
+                            ResizeBehavior="PreviousAndNext" />
                         <!--  Locked File Content Viewer  -->
-                        <materialDesign:Card Grid.Column="1">
+                        <materialDesign:Card Grid.Column="2">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />

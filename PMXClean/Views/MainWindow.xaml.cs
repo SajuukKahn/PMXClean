@@ -1,4 +1,4 @@
-namespace PMXClean.Views;
+﻿namespace PMXClean.Views;
 
 using System.Windows;
 using System.Windows.Controls;
