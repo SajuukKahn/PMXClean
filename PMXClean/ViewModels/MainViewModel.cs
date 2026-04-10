@@ -1243,7 +1243,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>
     /// Extracts an embedded resource file to a temporary location for comparison.
     /// </summary>
-    private string? ExtractEmbeddedFileForComparison(string resourceName, string version, string relativePath)
+    private static string? ExtractEmbeddedFileForComparison(string resourceName, string version, string relativePath)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var resourceNames = assembly.GetManifestResourceNames();

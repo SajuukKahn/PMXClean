@@ -278,4 +278,242 @@ public sealed partial class ComparisonViewModel : ObservableObject
         SelectedItem = null;
         StatusMessage = "Ready to compare";
     }
+
+    #region Backup-to-Backup Comparison
+
+    /// <summary>
+    /// Left backup for backup-to-backup comparison.
+    /// </summary>
+    [ObservableProperty]
+    public partial MachineBackupInfo? LeftBackup { get; set; }
+
+    /// <summary>
+    /// Right backup for backup-to-backup comparison.
+    /// </summary>
+    [ObservableProperty]
+    public partial MachineBackupInfo? RightBackup { get; set; }
+
+    /// <summary>
+    /// Whether we're in backup comparison mode (vs version comparison mode).
+    /// </summary>
+    public bool IsBackupComparisonMode => LeftBackup is not null && RightBackup is not null;
+
+    /// <summary>
+    /// Whether both backups are loaded and ready for comparison.
+    /// </summary>
+    public bool CanCompareBackups => LeftBackup is not null && RightBackup is not null;
+
+    /// <summary>
+    /// Whether the left backup can be swapped with the right backup.
+    /// </summary>
+    public bool CanSwapBackups => LeftBackup is not null || RightBackup is not null;
+
+    partial void OnLeftBackupChanged(MachineBackupInfo? value)
+    {
+        OnPropertyChanged(nameof(IsBackupComparisonMode));
+        OnPropertyChanged(nameof(CanCompareBackups));
+        OnPropertyChanged(nameof(CanSwapBackups));
+        CompareBackupsCommand.NotifyCanExecuteChanged();
+        SwapBackupsCommand.NotifyCanExecuteChanged();
+
+        if (value is not null)
+        {
+            LeftLabel = value.DisplayName;
+            LeftPath = value.ExtractedPath;
+        }
+    }
+
+    partial void OnRightBackupChanged(MachineBackupInfo? value)
+    {
+        OnPropertyChanged(nameof(IsBackupComparisonMode));
+        OnPropertyChanged(nameof(CanCompareBackups));
+        OnPropertyChanged(nameof(CanSwapBackups));
+        CompareBackupsCommand.NotifyCanExecuteChanged();
+        SwapBackupsCommand.NotifyCanExecuteChanged();
+
+        if (value is not null)
+        {
+            RightLabel = value.DisplayName;
+            RightPath = value.ExtractedPath;
+        }
+    }
+
+    /// <summary>
+    /// Loads a .machine backup as the left comparison source.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadLeftBackupAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select Left Backup",
+            Filter = "Machine Backup Files (*.machine)|*.machine|All Files (*.*)|*.*",
+            FilterIndex = 1
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            await LoadLeftBackupFromPathAsync(dialog.FileName);
+        }
+    }
+
+    /// <summary>
+    /// Loads a .machine backup as the right comparison source.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadRightBackupAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select Right Backup",
+            Filter = "Machine Backup Files (*.machine)|*.machine|All Files (*.*)|*.*",
+            FilterIndex = 1
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            await LoadRightBackupFromPathAsync(dialog.FileName);
+        }
+    }
+
+    /// <summary>
+    /// Loads a backup from path as the left source.
+    /// </summary>
+    public async Task LoadLeftBackupFromPathAsync(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+        {
+            StatusMessage = "Error: Invalid backup file path";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Loading left backup...";
+
+            // Clean up existing left backup
+            if (LeftBackup is not null)
+            {
+                await MachineBackupService.CleanupTempFolderAsync(LeftBackup.ExtractedPath);
+            }
+
+            LeftBackup = await MachineBackupService.LoadBackupAsync(filePath);
+            StatusMessage = $"Left backup loaded: {LeftBackup.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading left backup: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Loads a backup from path as the right source.
+    /// </summary>
+    public async Task LoadRightBackupFromPathAsync(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+        {
+            StatusMessage = "Error: Invalid backup file path";
+            return;
+        }
+
+        try
+        {
+            StatusMessage = "Loading right backup...";
+
+            // Clean up existing right backup
+            if (RightBackup is not null)
+            {
+                await MachineBackupService.CleanupTempFolderAsync(RightBackup.ExtractedPath);
+            }
+
+            RightBackup = await MachineBackupService.LoadBackupAsync(filePath);
+            StatusMessage = $"Right backup loaded: {RightBackup.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading right backup: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Compares the two loaded backups.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCompareBackups))]
+    private async Task CompareBackupsAsync()
+    {
+        if (LeftBackup is null || RightBackup is null)
+        {
+            StatusMessage = "Please load both backups to compare";
+            return;
+        }
+
+        // Set up paths and run comparison
+        LeftPath = LeftBackup.ExtractedPath;
+        RightPath = RightBackup.ExtractedPath;
+        LeftLabel = LeftBackup.DisplayName;
+        RightLabel = RightBackup.DisplayName;
+
+        await CompareAsync();
+    }
+
+    /// <summary>
+    /// Swaps the left and right backups.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSwapBackups))]
+    private void SwapBackups()
+    {
+        (LeftBackup, RightBackup) = (RightBackup, LeftBackup);
+        (LeftPath, RightPath) = (RightPath, LeftPath);
+        (LeftLabel, RightLabel) = (RightLabel, LeftLabel);
+
+        StatusMessage = "Backups swapped";
+    }
+
+    /// <summary>
+    /// Clears both loaded backups and cleans up temp folders.
+    /// </summary>
+    [RelayCommand]
+    private async Task ClearBackupsAsync()
+    {
+        if (LeftBackup is not null)
+        {
+            await MachineBackupService.CleanupTempFolderAsync(LeftBackup.ExtractedPath);
+            LeftBackup = null;
+        }
+
+        if (RightBackup is not null)
+        {
+            await MachineBackupService.CleanupTempFolderAsync(RightBackup.ExtractedPath);
+            RightBackup = null;
+        }
+
+        LeftPath = string.Empty;
+        RightPath = string.Empty;
+        LeftLabel = "Left";
+        RightLabel = "Right";
+        ComparisonItems.Clear();
+        CurrentFileComparison = null;
+        StatusMessage = "Backups cleared";
+    }
+
+    /// <summary>
+    /// Cleans up both backup temp folders. Should be called when the comparison is closed.
+    /// </summary>
+    public async Task CleanupBackupsAsync()
+    {
+        if (LeftBackup is not null)
+        {
+            await MachineBackupService.CleanupTempFolderAsync(LeftBackup.ExtractedPath);
+            LeftBackup = null;
+        }
+
+        if (RightBackup is not null)
+        {
+            await MachineBackupService.CleanupTempFolderAsync(RightBackup.ExtractedPath);
+            RightBackup = null;
+        }
+    }
+
+    #endregion
 }
