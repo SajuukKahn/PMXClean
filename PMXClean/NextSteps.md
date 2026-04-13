@@ -2,6 +2,7 @@
 
 ---
 
+- Target remote pc for queries in powershell instead of only local checks
 
 ## 4. Rework Deploy Script for Single-File Deployment
 
