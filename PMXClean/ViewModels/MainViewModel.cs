@@ -187,6 +187,8 @@ public sealed partial class MainViewModel : ObservableObject
         public ObservableCollection<SystemStatusItem> SystemStatusItems { get; } = [];
         public ObservableCollection<SystemStatusItem> NetworkStatusItems { get; } = [];
         public ObservableCollection<EventLogItem> EventLogItems { get; } = [];
+        public ObservableCollection<ProcessInfo> RunningProcesses { get; } = [];
+        public ObservableCollection<SerialPortInfo> SerialPorts { get; } = [];
 
         /// <summary>
         /// ViewModel for the built-in Python comparison feature.
@@ -2025,9 +2027,6 @@ public sealed partial class MainViewModel : ObservableObject
                             deletedCount++;
                         }
                     }
-
-                    // Clean up empty directories
-                    CleanupEmptyDirectories(cameraBackupPath);
                 });
 
                 UpdateBackupInfo();
@@ -2081,9 +2080,6 @@ public sealed partial class MainViewModel : ObservableObject
                         File.Delete(file);
                         deletedCount++;
                     }
-
-                    // Clean up empty directories
-                    CleanupEmptyDirectories(featureBackupPath);
                 });
 
                 UpdateBackupInfo();
@@ -2207,9 +2203,6 @@ public sealed partial class MainViewModel : ObservableObject
                         File.Delete(file);
                         deletedCount++;
                     }
-
-                    // Clean up empty directories
-                    CleanupEmptyDirectories(backupPath);
                 });
 
                 UpdateBackupInfo();
@@ -2219,30 +2212,6 @@ public sealed partial class MainViewModel : ObservableObject
             catch (Exception ex)
             {
                 StatusMessage = $"Error removing {fileType} from backup: {ex.Message}";
-            }
-        }
-
-        private static void CleanupEmptyDirectories(string rootPath)
-        {
-            if (!Directory.Exists(rootPath))
-            {
-                return;
-            }
-
-            foreach (string dir in Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
-                .OrderByDescending(d => d.Length))
-            {
-                try
-                {
-                    if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
-                    {
-                        Directory.Delete(dir);
-                    }
-                }
-                catch
-                {
-                    // Ignore errors when cleaning up empty directories
-                }
             }
         }
 
@@ -2957,12 +2926,107 @@ public sealed partial class MainViewModel : ObservableObject
             await CheckPowerSettingsAsync();
             await CheckMemoryAndDiskAsync();
             await CheckPCIeDevicesAsync();
+            await CheckSerialPortsInfoAsync();
 
             StatusMessage = "System diagnostics complete";
         }
         catch (Exception ex)
         {
             StatusMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Adds serial port summary to system status items (called as part of CheckSystemAsync).
+    /// </summary>
+    private async Task CheckSerialPortsInfoAsync()
+    {
+        var items = new List<SystemStatusItem>();
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = @"-ExecutionPolicy Bypass -Command ""
+                        $ports = Get-PnpDevice -PresentOnly -Class 'Ports' -ErrorAction SilentlyContinue;
+                        if ($ports) {
+                            $okCount = ($ports | Where-Object { $_.Status -eq 'OK' }).Count;
+                            $errorCount = ($ports | Where-Object { $_.Status -ne 'OK' }).Count;
+                            $total = $ports.Count;
+                            Write-Output ('{0}|{1}|{2}' -f $total, $okCount, $errorCount);
+                            foreach ($port in $ports) {
+                                Write-Output ('PORT|{0}|{1}' -f $port.FriendlyName, $port.Status);
+                            }
+                        } else {
+                            Write-Output '0|0|0';
+                        }
+                    """,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = Process.Start(psi);
+                if (process is not null)
+                {
+                    string result = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (lines.Length > 0)
+                    {
+                        var summaryParts = lines[0].Split('|');
+                        if (summaryParts.Length >= 3)
+                        {
+                            int total = int.Parse(summaryParts[0]);
+                            int okCount = int.Parse(summaryParts[1]);
+                            int errorCount = int.Parse(summaryParts[2]);
+
+                            var detailsBuilder = new StringBuilder();
+                            foreach (var line in lines.Skip(1).Where(l => l.StartsWith("PORT|")))
+                            {
+                                var parts = line.Split('|');
+                                if (parts.Length >= 3)
+                                {
+                                    string statusIcon = parts[2].Equals("OK", StringComparison.OrdinalIgnoreCase) ? "✓" : "✗";
+                                    detailsBuilder.AppendLine($"{statusIcon} {parts[1]} ({parts[2]})");
+                                }
+                            }
+
+                            SystemStatus status = errorCount > 0 ? SystemStatus.Warning :
+                                                 total > 0 ? SystemStatus.Good : SystemStatus.Info;
+
+                            items.Add(new SystemStatusItem
+                            {
+                                Name = "Serial Ports (COM)",
+                                Category = "Hardware",
+                                Status = status,
+                                StatusText = total > 0 ? $"{total} port(s), {okCount} OK" : "No ports found",
+                                Details = detailsBuilder.Length > 0 ? detailsBuilder.ToString().TrimEnd() : "No serial ports detected"
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                items.Add(new SystemStatusItem
+                {
+                    Name = "Serial Ports",
+                    Category = "Hardware",
+                    Status = SystemStatus.Unknown,
+                    StatusText = "Error",
+                    Details = $"Failed to query: {ex.Message}"
+                });
+            }
+        });
+
+        foreach (var item in items)
+        {
+            SystemStatusItems.Add(item);
         }
     }
 
@@ -3278,6 +3342,19 @@ public sealed partial class MainViewModel : ObservableObject
                             Write-Output 'N/A';Write-Output '0';Write-Output '0';
                         }
 
+                        Write-Output '===MEMORY===';
+
+                        $memory = Get-CimInstance Win32_PhysicalMemory;
+                        foreach ($stick in $memory) {
+                            $capGB = [math]::Round($stick.Capacity / 1GB, 0);
+                            $memType = $stick.SMBIOSMemoryType;
+                            $speed = $stick.Speed;
+                            $locator = $stick.DeviceLocator;
+                            Write-Output ('{0}|{1}|{2}|{3}' -f $locator, $capGB, $memType, $speed);
+                        }
+
+                        Write-Output '===DISKS===';
+
                         $disks = Get-PhysicalDisk -ErrorAction SilentlyContinue;
                         if ($disks) {
                             foreach ($disk in $disks) {
@@ -3306,55 +3383,104 @@ public sealed partial class MainViewModel : ObservableObject
                     string result = process.StandardOutput.ReadToEnd();
                     process.WaitForExit();
 
-                    var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    if (lines.Length >= 7)
+                    var sections = result.Split("===", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                    // First section: basic memory info
+                    if (sections.Length > 0)
                     {
-                        double totalMem = double.Parse(lines[0]);
-                        double usedMem = double.Parse(lines[1]);
-                        double freeMem = double.Parse(lines[2]);
-                        double memPercent = double.Parse(lines[3]);
-
-                        // Memory Status
-                        SystemStatus memStatus = memPercent < 80 ? SystemStatus.Good :
-                                                memPercent < 90 ? SystemStatus.Warning : SystemStatus.Error;
-                        items.Add(new SystemStatusItem
+                        var lines = sections[0].Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (lines.Length >= 7)
                         {
-                            Name = "Memory Usage",
-                            Category = "Hardware",
-                            Status = memStatus,
-                            StatusText = $"{memPercent:F1}% ({usedMem:F1} GB / {totalMem:F1} GB)",
-                            Details = $"Total: {totalMem:F1} GB\nUsed: {usedMem:F1} GB\nFree: {freeMem:F1} GB"
-                        });
+                            double totalMem = double.Parse(lines[0]);
+                            double usedMem = double.Parse(lines[1]);
+                            double freeMem = double.Parse(lines[2]);
+                            double memPercent = double.Parse(lines[3]);
 
-                        // Page File
-                        string pageFileName = lines[4];
-                        int pageFileAllocated = int.Parse(lines[5]);
-                        int pageFileUsage = int.Parse(lines[6]);
-
-                        if (pageFileName != "N/A")
-                        {
-                            double pagePercent = pageFileAllocated > 0 ? (pageFileUsage / (double)pageFileAllocated) * 100 : 0;
-                            SystemStatus pageStatus = pagePercent < 50 ? SystemStatus.Good :
-                                                     pagePercent < 75 ? SystemStatus.Warning : SystemStatus.Error;
+                            // Memory Status
+                            SystemStatus memStatus = memPercent < 80 ? SystemStatus.Good :
+                                                    memPercent < 90 ? SystemStatus.Warning : SystemStatus.Error;
                             items.Add(new SystemStatusItem
                             {
-                                Name = "Page File",
+                                Name = "Memory Usage",
                                 Category = "Hardware",
-                                Status = pageStatus,
-                                StatusText = $"{pageFileUsage} MB / {pageFileAllocated} MB",
-                                Details = $"Location: {pageFileName}\nAllocated: {pageFileAllocated} MB\nUsage: {pageFileUsage} MB ({pagePercent:F1}%)"
+                                Status = memStatus,
+                                StatusText = $"{memPercent:F1}% ({usedMem:F1} GB / {totalMem:F1} GB)",
+                                Details = $"Total: {totalMem:F1} GB\nUsed: {usedMem:F1} GB\nFree: {freeMem:F1} GB"
                             });
+
+                            // Page File
+                            string pageFileName = lines[4];
+                            int pageFileAllocated = int.Parse(lines[5]);
+                            int pageFileUsage = int.Parse(lines[6]);
+
+                            if (pageFileName != "N/A")
+                            {
+                                double pagePercent = pageFileAllocated > 0 ? (pageFileUsage / (double)pageFileAllocated) * 100 : 0;
+                                SystemStatus pageStatus = pagePercent < 50 ? SystemStatus.Good :
+                                                         pagePercent < 75 ? SystemStatus.Warning : SystemStatus.Error;
+                                items.Add(new SystemStatusItem
+                                {
+                                    Name = "Page File",
+                                    Category = "Hardware",
+                                    Status = pageStatus,
+                                    StatusText = $"{pageFileUsage} MB / {pageFileAllocated} MB",
+                                    Details = $"Location: {pageFileName}\nAllocated: {pageFileAllocated} MB\nUsage: {pageFileUsage} MB ({pagePercent:F1}%)"
+                                });
+                            }
+                        }
+                    }
+
+                    // Memory modules section
+                    var memorySection = sections.FirstOrDefault(s => s.StartsWith("MEMORY"));
+                    if (memorySection is not null)
+                    {
+                        var memLines = memorySection.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Skip(1) // Skip "MEMORY" header
+                            .ToArray();
+
+                        var moduleDetails = new StringBuilder();
+                        foreach (var line in memLines)
+                        {
+                            var parts = line.Split('|');
+                            if (parts.Length >= 4)
+                            {
+                                string locator = parts[0];
+                                string capGB = parts[1];
+                                string memType = GetMemoryTypeName(int.TryParse(parts[2], out int typeCode) ? typeCode : 0);
+                                string speed = parts[3];
+                                moduleDetails.AppendLine($"{locator}: {capGB} GB {memType} @ {speed}MHz");
+                            }
                         }
 
-                        // Physical Disks
-                        int diskIndex = 7;
-                        while (diskIndex + 5 < lines.Length)
+                        if (moduleDetails.Length > 0)
                         {
-                            string diskName = lines[diskIndex];
-                            string mediaType = lines[diskIndex + 1];
-                            string healthStatus = lines[diskIndex + 2];
-                            string busType = lines[diskIndex + 3];
-                            string sizeGB = lines[diskIndex + 4];
+                            items.Add(new SystemStatusItem
+                            {
+                                Name = "Memory Modules",
+                                Category = "Hardware",
+                                Status = SystemStatus.Info,
+                                StatusText = $"{memLines.Length} module(s) installed",
+                                Details = moduleDetails.ToString().TrimEnd()
+                            });
+                        }
+                    }
+
+                    // Physical Disks section
+                    var diskSection = sections.FirstOrDefault(s => s.StartsWith("DISKS"));
+                    if (diskSection is not null)
+                    {
+                        var diskLines = diskSection.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Skip(1) // Skip "DISKS" header
+                            .ToArray();
+
+                        int diskIndex = 0;
+                        while (diskIndex + 5 <= diskLines.Length)
+                        {
+                            string diskName = diskLines[diskIndex];
+                            string mediaType = diskLines[diskIndex + 1];
+                            string healthStatus = diskLines[diskIndex + 2];
+                            string busType = diskLines[diskIndex + 3];
+                            string sizeGB = diskLines[diskIndex + 4];
 
                             SystemStatus diskStatus = healthStatus.Equals("Healthy", StringComparison.OrdinalIgnoreCase) ? SystemStatus.Good :
                                                      healthStatus.Equals("Warning", StringComparison.OrdinalIgnoreCase) ? SystemStatus.Warning : SystemStatus.Error;
@@ -3393,6 +3519,52 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SystemStatusItems.Add(item);
         }
+    }
+
+    /// <summary>
+    /// Converts SMBIOSMemoryType code to human-readable memory type name.
+    /// </summary>
+    private static string GetMemoryTypeName(int typeCode)
+    {
+        return typeCode switch
+        {
+            0 => "Unknown",
+            1 => "Other",
+            2 => "DRAM",
+            3 => "Synchronous DRAM",
+            4 => "Cache DRAM",
+            5 => "EDO",
+            6 => "EDRAM",
+            7 => "VRAM",
+            8 => "SRAM",
+            9 => "ROM",
+            10 => "ROM",
+            11 => "FLASH",
+            12 => "EEPROM",
+            13 => "FEPROM",
+            14 => "EPROM",
+            15 => "CDRAM",
+            16 => "3DRAM",
+            17 => "SDRAM",
+            18 => "SGRAM",
+            19 => "RDRAM",
+            20 => "DDR",
+            21 => "DDR2",
+            22 => "DDR2 FB-DIMM",
+            24 => "DDR3",
+            25 => "FBD2",
+            26 => "DDR4",
+            27 => "LPDDR",
+            28 => "LPDDR2",
+            29 => "LPDDR3",
+            30 => "LPDDR4",
+            31 => "Logical non-volatile device",
+            32 => "HBM",
+            33 => "HBM2",
+            34 => "DDR5",
+            35 => "LPDDR5",
+            _ => $"Unknown ({typeCode})"
+        };
     }
 
     private async Task CheckPCIeDevicesAsync()
@@ -3539,6 +3711,391 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SystemStatusItems.Add(item);
         }
+    }
+
+    /// <summary>
+    /// Checks running processes and populates the RunningProcesses collection.
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckRunningProcessesAsync()
+    {
+        try
+        {
+            StatusMessage = "Scanning running processes...";
+            RunningProcesses.Clear();
+
+            var processes = new List<ProcessInfo>();
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "powershell.exe",
+                        Arguments = @"-ExecutionPolicy Bypass -Command ""
+                            Get-Process | ForEach-Object {
+                                $memKB = [math]::Round($_.WS / 1KB, 0);
+                                $path = '';
+                                try { $path = $_.Path; } catch { }
+                                Write-Output ('{0}|{1}|{2}|{3}' -f $_.Id, $_.Name, $memKB, $path);
+                            }
+                        """,
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using var process = Process.Start(psi);
+                    if (process is not null)
+                    {
+                        string result = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+
+                        var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        foreach (var line in lines)
+                        {
+                            var parts = line.Split('|');
+                            if (parts.Length >= 4)
+                            {
+                                if (int.TryParse(parts[0], out int pid) && long.TryParse(parts[2], out long memKB))
+                                {
+                                    processes.Add(new ProcessInfo
+                                    {
+                                        ProcessId = pid,
+                                        Name = parts[1],
+                                        MemoryKB = memKB,
+                                        Path = parts[3]
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error getting processes: {ex.Message}");
+                }
+            });
+
+            // Sort by memory (highest first) and add to collection
+            var sorted = processes.OrderByDescending(p => p.MemoryKB).ToList();
+            foreach (var proc in sorted)
+            {
+                RunningProcesses.Add(proc);
+            }
+
+            StatusMessage = $"Found {RunningProcesses.Count} running processes";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error scanning processes: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Checks serial port devices and populates the SerialPorts collection.
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckSerialPortsAsync()
+    {
+        try
+        {
+            StatusMessage = "Scanning serial ports...";
+            SerialPorts.Clear();
+
+            var ports = new List<SerialPortInfo>();
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "powershell.exe",
+                        Arguments = @"-ExecutionPolicy Bypass -Command ""
+                            Get-PnpDevice -PresentOnly -Class 'Ports' -ErrorAction SilentlyContinue | ForEach-Object {
+                                $name = $_.FriendlyName;
+                                $status = $_.Status;
+                                $driverFile = '';
+                                $driverDate = '';
+                                $driverVersion = '';
+                                try {
+                                    $props = Get-PnpDeviceProperty -InstanceID $_.InstanceId -ErrorAction SilentlyContinue;
+                                    $driverFile = ($props | Where-Object { $_.KeyName -eq 'DEVPKEY_Device_DriverInfPath' }).Data;
+                                    $dateVal = ($props | Where-Object { $_.KeyName -eq 'DEVPKEY_Device_DriverDate' }).Data;
+                                    if ($dateVal) { $driverDate = $dateVal.ToString('yyyy-MM-dd'); }
+                                    $driverVersion = ($props | Where-Object { $_.KeyName -eq 'DEVPKEY_Device_DriverVersion' }).Data;
+                                } catch { }
+                                Write-Output ('{0}|{1}|{2}|{3}|{4}' -f $name, $status, $driverFile, $driverDate, $driverVersion);
+                            }
+                        """,
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using var process = Process.Start(psi);
+                    if (process is not null)
+                    {
+                        string result = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+
+                        var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        foreach (var line in lines)
+                        {
+                            var parts = line.Split('|');
+                            if (parts.Length >= 5)
+                            {
+                                DateTime? driverDate = null;
+                                if (DateTime.TryParse(parts[3], out var parsedDate))
+                                {
+                                    driverDate = parsedDate;
+                                }
+
+                                ports.Add(new SerialPortInfo
+                                {
+                                    Name = parts[0],
+                                    Status = parts[1],
+                                    DriverFileName = parts[2],
+                                    DriverDate = driverDate,
+                                    DriverVersion = parts[4]
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error getting serial ports: {ex.Message}");
+                }
+            });
+
+            // Sort by name and add to collection
+            var sorted = ports.OrderBy(p => p.Name).ToList();
+            foreach (var port in sorted)
+            {
+                SerialPorts.Add(port);
+            }
+
+            StatusMessage = $"Found {SerialPorts.Count} serial port(s)";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error scanning serial ports: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Enhanced event log search that includes PathMasterX events and unexpected power loss events.
+    /// </summary>
+    private async Task SearchEventLogsWithPowerLossAsync()
+    {
+        try
+        {
+            EventSearchStatus = "Searching Application, System, and Windows Error Reporting logs...";
+            EventLogItems.Clear();
+
+            var searchTerms = new[]
+            {
+                "PVA.PathMasterX",
+                "PathMasterX",
+                "PathMaster X",
+                "PathMaster"
+            };
+
+            var logNames = new[] { "Application", "System" };
+
+            await Task.Run(() =>
+            {
+                foreach (var logName in logNames)
+                {
+                    SearchEventLog(logName, searchTerms);
+                }
+
+                // Search Windows Error Reporting logs
+                SearchWerLogs(searchTerms);
+
+                // Search for power loss / unexpected shutdown events
+                SearchPowerLossEvents();
+            });
+
+            EventSearchStatus = $"Found {EventLogItems.Count} events (including power events)";
+            StatusMessage = $"Event search complete - Found {EventLogItems.Count} events";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error searching event logs: {ex.Message}";
+            EventSearchStatus = $"Error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Searches for power-related events indicating unexpected shutdowns or power loss.
+    /// Event ID 41 (Kernel-Power): System rebooted without cleanly shutting down first.
+    /// Event ID 6008 (EventLog): Previous system shutdown was unexpected.
+    /// Event ID 1074 (User32): System initiated restart/shutdown (for context).
+    /// </summary>
+    private void SearchPowerLossEvents()
+    {
+        try
+        {
+            // Search for Kernel-Power critical events (Event ID 41 - unexpected shutdown)
+            var kernelPowerQuery = new System.Diagnostics.Eventing.Reader.EventLogQuery(
+                "System",
+                System.Diagnostics.Eventing.Reader.PathType.LogName,
+                "*[System[Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=41)]]");
+
+            using (var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(kernelPowerQuery))
+            {
+                System.Diagnostics.Eventing.Reader.EventRecord? record;
+                while ((record = reader.ReadEvent()) is not null)
+                {
+                    try
+                    {
+                        string description = record.FormatDescription() ?? "The system rebooted without cleanly shutting down first.";
+
+                        var logItem = new EventLogItem
+                        {
+                            Name = "Kernel-Power",
+                            EventId = record.Id,
+                            Level = EventLogLevel.Critical,
+                            StatusText = $"Critical - Unexpected Shutdown - {record.TimeCreated:g}",
+                            Details = description,
+                            Category = "Power Loss",
+                            TimeCreated = record.TimeCreated ?? DateTime.MinValue
+                        };
+
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            InsertEventLogItemSorted(logItem);
+                            EventSearchStatus = $"Found {EventLogItems.Count} events...";
+                        });
+                    }
+                    catch
+                    {
+                        // Skip records that can't be read
+                    }
+                    finally
+                    {
+                        record.Dispose();
+                    }
+                }
+            }
+
+            // Search for EventLog provider event ID 6008 (Previous shutdown was unexpected)
+            var eventLogQuery = new System.Diagnostics.Eventing.Reader.EventLogQuery(
+                "System",
+                System.Diagnostics.Eventing.Reader.PathType.LogName,
+                "*[System[Provider[@Name='EventLog'] and (EventID=6008)]]");
+
+            using (var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(eventLogQuery))
+            {
+                System.Diagnostics.Eventing.Reader.EventRecord? record;
+                while ((record = reader.ReadEvent()) is not null)
+                {
+                    try
+                    {
+                        string description = record.FormatDescription() ?? "The previous system shutdown was unexpected.";
+
+                        var logItem = new EventLogItem
+                        {
+                            Name = "EventLog",
+                            EventId = record.Id,
+                            Level = EventLogLevel.Error,
+                            StatusText = $"Error - Unexpected Shutdown - {record.TimeCreated:g}",
+                            Details = description,
+                            Category = "Power Loss",
+                            TimeCreated = record.TimeCreated ?? DateTime.MinValue
+                        };
+
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            InsertEventLogItemSorted(logItem);
+                            EventSearchStatus = $"Found {EventLogItems.Count} events...";
+                        });
+                    }
+                    catch
+                    {
+                        // Skip records that can't be read
+                    }
+                    finally
+                    {
+                        record.Dispose();
+                    }
+                }
+            }
+
+            // Search for User32 event ID 1074 (shutdown/restart initiated - for context)
+            var user32Query = new System.Diagnostics.Eventing.Reader.EventLogQuery(
+                "System",
+                System.Diagnostics.Eventing.Reader.PathType.LogName,
+                "*[System[Provider[@Name='User32'] and (EventID=1074)]]");
+
+            using (var reader = new System.Diagnostics.Eventing.Reader.EventLogReader(user32Query))
+            {
+                System.Diagnostics.Eventing.Reader.EventRecord? record;
+                int count = 0;
+                while ((record = reader.ReadEvent()) is not null && count < 50) // Limit to 50 for performance
+                {
+                    try
+                    {
+                        string description = record.FormatDescription() ?? "The process initiated a restart or shutdown.";
+
+                        var logItem = new EventLogItem
+                        {
+                            Name = "User32",
+                            EventId = record.Id,
+                            Level = EventLogLevel.Information,
+                            StatusText = $"Shutdown/Restart Initiated - {record.TimeCreated:g}",
+                            Details = description,
+                            Category = "Power Events",
+                            TimeCreated = record.TimeCreated ?? DateTime.MinValue
+                        };
+
+                        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            InsertEventLogItemSorted(logItem);
+                            EventSearchStatus = $"Found {EventLogItems.Count} events...";
+                        });
+
+                        count++;
+                    }
+                    catch
+                    {
+                        // Skip records that can't be read
+                    }
+                    finally
+                    {
+                        record.Dispose();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error searching power loss events: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Helper method to insert an event log item in sorted order by time (newest first).
+    /// </summary>
+    private void InsertEventLogItemSorted(EventLogItem logItem)
+    {
+        int insertIndex = 0;
+        for (int i = 0; i < EventLogItems.Count; i++)
+        {
+            if (logItem.TimeCreated > EventLogItems[i].TimeCreated)
+            {
+                insertIndex = i;
+                break;
+            }
+
+            insertIndex = i + 1;
+        }
+
+        EventLogItems.Insert(insertIndex, logItem);
     }
 
     #endregion
@@ -3707,14 +4264,14 @@ public sealed partial class MainViewModel : ObservableObject
         bool anyFilesCopied = false;
         foreach (string file in Directory.GetFiles(sourceDir, pattern, SearchOption.AllDirectories))
         {
-            string relativePath = Path.GetRelativePath(sourceDir, file);
-            string targetFile = Path.Combine(targetDir, relativePath);
-
-            string? targetFileDir = Path.GetDirectoryName(targetFile);
-            if (targetFileDir?[sourceDir.Length..].StartsWith("\\lib") == true)
+            if (file[sourceDir.Length..].StartsWith("\\lib"))
             {
                 continue;
             }
+
+            string relativePath = Path.GetRelativePath(sourceDir, file);
+            string targetFile = Path.Combine(targetDir, relativePath);
+            string? targetFileDir = Path.GetDirectoryName(targetFile);
 
             if (targetFileDir is not null && !Directory.Exists(targetFileDir))
             {

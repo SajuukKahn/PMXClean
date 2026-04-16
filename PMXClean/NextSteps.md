@@ -4,7 +4,6 @@
 
 - Target remote pc for queries in powershell instead of only local checks
 - Also add ability to run the powershell script in the PathMaster X target location and gather the output
-- Make a feature that will create a one-time run script that does a .txt output so we can send specialized diagnostic scripts to a customer
 
 ## 4. Rework Deploy Script for Single-File Deployment
 

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>app.ico</ApplicationIcon>
 
     <!-- Single File Publishing Configuration -->
     <PublishSingleFile>true</PublishSingleFile>
@@ -25,6 +26,9 @@
     <EmbeddedResource Include="PMXVersions\**\*.py">
       <LogicalName>PMXVersions\%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="app.ico" />
   </ItemGroup>
 
 </Project>
