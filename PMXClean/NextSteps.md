@@ -4,6 +4,8 @@
 
 - Target remote pc for queries in powershell instead of only local checks
 - Also add ability to run the powershell script in the PathMaster X target location and gather the output
+- Add ability to create a text file "diff log" changelog file for programming
+- 
 
 ## 4. Rework Deploy Script for Single-File Deployment
 
