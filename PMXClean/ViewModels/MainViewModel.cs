@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.NetworkInformation;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -666,61 +667,79 @@ public sealed partial class MainViewModel : ObservableObject
 
     #region Python Comparison
 
+    /// <summary>
+    /// Loads available versions - now extracts from target installation DLLs instead of embedded resources.
+    /// </summary>
     private void LoadAvailableVersions()
     {
         AvailableVersions.Clear();
 
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceNames = assembly.GetManifestResourceNames();
+        // No longer using embedded resources - versions are extracted from installation DLLs
+        // Add a single "Installed" version entry
+        AvailableVersions.Add("Installed");
+        SelectedVersion = "Installed";
 
-        var versions = resourceNames
-            .Where(name => name.StartsWith("PMXVersions\\", StringComparison.OrdinalIgnoreCase))
-            .Select(name =>
-            {
-                var parts = name.Split('\\');
-                return parts.Length >= 2 ? parts[1] : null;
-            })
-            .Where(v => v is not null)
-            .Distinct()
-            .OrderByDescending(v => v == "master" ? "zzzz" : v)
-            .ToList();
-
-        foreach (var version in versions)
-        {
-            if (version is not null)
-            {
-                AvailableVersions.Add(version);
-            }
-        }
-
-        if (AvailableVersions.Count > 0)
-        {
-            SelectedVersion = AvailableVersions.First();
-        }
-
-        StatusMessage = $"Loaded {AvailableVersions.Count} available version(s)";
+        StatusMessage = "Ready to compare against installed version";
     }
 
     private void UpdateVersionInfo()
     {
-        if (string.IsNullOrEmpty(SelectedVersion))
+        if (string.IsNullOrEmpty(SelectedVersion) || SelectedInstallation is null)
         {
             VersionInfoText = string.Empty;
             return;
         }
 
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceNames = assembly.GetManifestResourceNames();
+        // Count Python files that would be extracted from DLLs
+        try
+        {
+            int pythonFileCount = CountPythonFilesInDlls(SelectedInstallation.Path);
+            VersionInfoText = $"{pythonFileCount} Python files in DLLs";
+        }
+        catch (Exception ex)
+        {
+            VersionInfoText = $"Error counting files: {ex.Message}";
+        }
+    }
 
-        var fileCount = resourceNames
-            .Count(name => name.StartsWith($"PMXVersions\\{SelectedVersion}\\", StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Counts Python files embedded in DLLs within the installation path (subfolders only).
+    /// </summary>
+    private static int CountPythonFilesInDlls(string installationPath)
+    {
+        int count = 0;
 
-        VersionInfoText = $"{fileCount} Python files";
+        try
+        {
+            // Get all DLL files from subfolders (excluding root)
+            var dllFiles = Directory.GetFiles(installationPath, "*.dll", SearchOption.AllDirectories)
+                .Where(dll => !Path.GetDirectoryName(dll)!.Equals(installationPath, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var dllPath in dllFiles)
+            {
+                try
+                {
+                    var assembly = Assembly.LoadFrom(dllPath);
+                    var resourceNames = assembly.GetManifestResourceNames();
+                    count += resourceNames.Count(name => name.EndsWith(".py", StringComparison.OrdinalIgnoreCase));
+                }
+                catch
+                {
+                    // Skip DLLs that can't be loaded
+                }
+            }
+        }
+        catch
+        {
+            // Return 0 if there's an error
+        }
+
+        return count;
     }
 
     /// <summary>
     /// Sets up the comparison paths when version or installation changes.
-    /// Extracts the embedded version files to a temp directory and configures the ComparisonViewModel.
+    /// Extracts Python files from DLLs in the installation to a temp directory and configures the ComparisonViewModel.
     /// </summary>
     private void SetupComparisonPaths()
     {
@@ -733,11 +752,11 @@ public sealed partial class MainViewModel : ObservableObject
         {
             string sourceDir = Path.Combine(_comparisonTempDirectory, "source");
             CleanAndCreateDirectory(sourceDir);
-            int extractedCount = ExtractEmbeddedVersionFiles(SelectedVersion, sourceDir);
+            int extractedCount = ExtractPythonFilesFromDlls(SelectedInstallation.Path, sourceDir);
 
             if (extractedCount == 0)
             {
-                StatusMessage = $"No files found for version {SelectedVersion}";
+                StatusMessage = $"No Python files found in DLLs";
                 return;
             }
 
@@ -751,11 +770,141 @@ public sealed partial class MainViewModel : ObservableObject
                 SelectedInstallation.Path,
                 SelectedVersion,
                 targetLabel);
+
+            StatusMessage = $"Extracted {extractedCount} Python files from DLLs for comparison";
         }
         catch (Exception ex)
         {
             StatusMessage = $"Error setting up comparison: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Extracts Python files from all DLLs in the installation path (subfolders only) to a target directory.
+    /// Returns the count of extracted files.
+    /// The extracted files are placed relative to the DLL's location, not based on the resource namespace.
+    /// </summary>
+    private static int ExtractPythonFilesFromDlls(string installationPath, string targetDir)
+    {
+        int extractedCount = 0;
+
+        try
+        {
+            // Get all DLL files from subfolders (excluding root)
+            var dllFiles = Directory.GetFiles(installationPath, "*.dll", SearchOption.AllDirectories)
+                .Where(dll => !Path.GetDirectoryName(dll)!.Equals(installationPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var dllPath in dllFiles)
+            {
+                try
+                {
+                    // Load assembly in isolated context to allow unloading
+                    var loadContext = new AssemblyLoadContext(name: null, isCollectible: true);
+                    try
+                    {
+                        var assembly = loadContext.LoadFromAssemblyPath(dllPath);
+                        var resourceNames = assembly.GetManifestResourceNames();
+                        var pythonResources = resourceNames.Where(name => name.EndsWith(".py", StringComparison.OrdinalIgnoreCase));
+
+                        // Get the DLL's directory relative to installation path
+                        string dllDirectory = Path.GetDirectoryName(dllPath)!;
+                        string relativeDllPath = Path.GetRelativePath(installationPath, dllDirectory);
+
+                        foreach (var resourceName in pythonResources)
+                    {
+                        try
+                        {
+                            using var stream = assembly.GetManifestResourceStream(resourceName);
+                            if (stream is not null)
+                            {
+                                // Extract folder structure and filename from the resource name
+                                // Resource: "PVA.PathMasterX.Base.Core.Safety.Button.Configuration.py"
+                                //   → "Configuration.py" in DLL folder
+                                // Resource: "PVA.PathMasterX.Base.Core.Safety.Button.Functions.Monitor.py"
+                                //   → "Functions\Monitor.py" relative to DLL folder
+
+                                // Get the assembly's root namespace by taking the assembly name
+                                string assemblyNamespace = assembly.GetName().Name ?? string.Empty;
+
+                                // Split resource name by dots
+                                var parts = resourceName.Split('.');
+
+                                if (parts.Length < 2)
+                                {
+                                    // Unexpected format, skip
+                                    continue;
+                                }
+
+                                // Last part is "py", second-to-last is the actual filename
+                                string pythonFileName = parts[^2] + ".py";
+
+                                // Find where the assembly namespace ends in the resource name
+                                // and extract any additional path segments after it
+                                string resourcePath = resourceName;
+                                if (!string.IsNullOrEmpty(assemblyNamespace) && 
+                                    resourcePath.StartsWith(assemblyNamespace + ".", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Remove assembly namespace prefix
+                                    resourcePath = resourcePath.Substring(assemblyNamespace.Length + 1);
+                                }
+
+                                // Split what remains and extract folder structure
+                                // Example: "Functions.Monitor.py" → ["Functions", "Monitor", "py"]
+                                var pathParts = resourcePath.Split('.');
+
+                                // Build the subfolder path (everything except the last 2 parts which are filename.py)
+                                string subfolderPath = string.Empty;
+                                if (pathParts.Length > 2)
+                                {
+                                    var folderParts = pathParts.Take(pathParts.Length - 2);
+                                    subfolderPath = Path.Combine(folderParts.ToArray());
+                                }
+
+                                // Build final output path
+                                string outputPath = string.IsNullOrEmpty(subfolderPath)
+                                    ? Path.Combine(targetDir, relativeDllPath, pythonFileName)
+                                    : Path.Combine(targetDir, relativeDllPath, subfolderPath, pythonFileName);
+
+                                // Create subdirectories if needed
+                                string? outputDir = Path.GetDirectoryName(outputPath);
+                                if (outputDir is not null && !Directory.Exists(outputDir))
+                                {
+                                    Directory.CreateDirectory(outputDir);
+                                }
+
+                                // Write to file
+                                using var fileStream = File.Create(outputPath);
+                                stream.CopyTo(fileStream);
+
+                                extractedCount++;
+                                Debug.WriteLine($"Extracted: {resourceName} → {Path.GetRelativePath(targetDir, outputPath)}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error extracting {resourceName} from {Path.GetFileName(dllPath)}: {ex.Message}");
+                        }
+                    }
+                    }
+                    finally
+                    {
+                        // Unload the assembly to prevent locking
+                        loadContext.Unload();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error loading DLL {Path.GetFileName(dllPath)}: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error extracting Python files from DLLs: {ex.Message}");
+        }
+
+        return extractedCount;
     }
 
     /// <summary>
@@ -776,67 +925,40 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        // Since we now only have "Installed" version, just set it and report version info
         try
         {
+            SelectedVersion = "Installed";
+
             string? fileVersion = null;
 
-            // No machine backup loaded for comparison, match the executable version directly from the target path
+            // Get version from executable or backup
             if (!SelectedInstallation.IsBackup)
             {
                 string exePath = Path.Combine(SelectedInstallation.Path, "PVA.PathMasterX.exe");
-                if (!File.Exists(exePath))
+                if (File.Exists(exePath))
                 {
-                    StatusMessage = "Error: Target executable not found";
-                    return;
+                    var versionInfo = FileVersionInfo.GetVersionInfo(exePath);
+                    fileVersion = versionInfo.FileVersion;
                 }
-
-                var versionInfo = FileVersionInfo.GetVersionInfo(exePath);
-                fileVersion = versionInfo.FileVersion;
-
-                if (string.IsNullOrEmpty(fileVersion))
-                {
-                    StatusMessage = "Error: Could not read version from executable";
-                    return;
-                }
-            }
-
-            // a machine backup is loaded, extract the version from Headers.data
-            else
-            {
-                if (SelectedInstallation.BackupInfo is not null)
-                {
-                    fileVersion = SelectedInstallation.BackupInfo.BackupVersion;
-                }
-                else
-                {
-                    StatusMessage = "Error: Backup information is missing";
-                    return;
-                }
-            }
-
-            var matchedVersion = AvailableVersions.FirstOrDefault(v =>
-                v.Equals(fileVersion, StringComparison.OrdinalIgnoreCase));
-
-            matchedVersion ??= AvailableVersions.FirstOrDefault(v => fileVersion.StartsWith(v, StringComparison.OrdinalIgnoreCase) || v.StartsWith(fileVersion, StringComparison.OrdinalIgnoreCase));
-
-            if (matchedVersion is not null)
-            {
-                SelectedVersion = matchedVersion;
-                StatusMessage = $"Auto-matched to version: {matchedVersion}";
             }
             else
             {
-                StatusMessage = $"No matching version found for {fileVersion}";
-                var masterVersion = AvailableVersions.FirstOrDefault(v => v == "master");
-                if (masterVersion is not null)
-                {
-                    SelectedVersion = masterVersion;
-                }
+                fileVersion = SelectedInstallation.BackupInfo?.BackupVersion;
+            }
+
+            if (!string.IsNullOrEmpty(fileVersion))
+            {
+                StatusMessage = $"Using installed version: {fileVersion}";
+            }
+            else
+            {
+                StatusMessage = "Using installed version (version info unavailable)";
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error auto-matching version: {ex.Message}";
+            StatusMessage = $"Error setting version: {ex.Message}";
         }
     }
 
@@ -848,43 +970,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         Directory.CreateDirectory(path);
-    }
-
-    private static int ExtractEmbeddedVersionFiles(string version, string targetDir)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceNames = assembly.GetManifestResourceNames();
-        var prefix = $"PMXVersions\\{version}\\";
-        int count = 0;
-
-        foreach (var resourceName in resourceNames.Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-        {
-            try
-            {
-                var relativePath = resourceName[prefix.Length..];
-                var targetPath = Path.Combine(targetDir, relativePath);
-
-                var targetFileDir = Path.GetDirectoryName(targetPath);
-                if (!string.IsNullOrEmpty(targetFileDir) && !Directory.Exists(targetFileDir))
-                {
-                    Directory.CreateDirectory(targetFileDir);
-                }
-
-                using var stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream is not null)
-                {
-                    using var fileStream = File.Create(targetPath);
-                    stream.CopyTo(fileStream);
-                    count++;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error extracting {resourceName}: {ex.Message}");
-            }
-        }
-
-        return count;
     }
 
     #endregion
@@ -1177,7 +1262,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Compares the selected locked file against a specific version from embedded resources.
+    /// Compares the selected locked file against the version extracted from DLLs.
     /// </summary>
     [RelayCommand]
     private void CompareLockedFileAgainstVersion(string? version)
@@ -1202,16 +1287,16 @@ public sealed partial class MainViewModel : ObservableObject
 
         try
         {
-            StatusMessage = $"Comparing {SelectedLockedFile.Name} against version {version}...";
+            StatusMessage = $"Comparing {SelectedLockedFile.Name} against DLL-embedded version...";
 
             // Get the relative path of the file from the installation root
             string relativePath = SelectedLockedFile.RelativePath;
 
-            // Build the embedded resource name for this file in the specified version
-            string resourceName = $"PMXVersions\\{version}\\{relativePath}";
-
-            // Extract the version file to a temp location for comparison
-            string? versionFilePath = ExtractEmbeddedFileForComparison(resourceName, version, relativePath);
+            // Extract the file from DLLs for comparison
+            string? versionFilePath = ExtractPythonFileFromDllsForComparison(
+                SelectedInstallation.Path, 
+                relativePath, 
+                version);
 
             // Perform the comparison
             LockedFileComparisonResult = FileComparisonService.CompareFiles(
@@ -1226,12 +1311,12 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 FileComparisonStatus.Same => "Files are identical",
                 FileComparisonStatus.Different => $"Files differ ({LockedFileComparisonResult.AddedLines} added, {LockedFileComparisonResult.RemovedLines} removed)",
-                FileComparisonStatus.LeftOnly => "File only exists in version (not in installation)",
-                FileComparisonStatus.RightOnly => "File only exists in installation (not in version)",
+                FileComparisonStatus.LeftOnly => "File only exists in DLL (not in filesystem)",
+                FileComparisonStatus.RightOnly => "File only exists in filesystem (not in DLL)",
                 _ => "Comparison complete"
             };
 
-            StatusMessage = $"Compared {SelectedLockedFile.Name} vs {version}: {statusDesc}";
+            StatusMessage = $"Compared {SelectedLockedFile.Name} vs DLL version: {statusDesc}";
         }
         catch (Exception ex)
         {
@@ -1243,39 +1328,140 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Extracts an embedded resource file to a temporary location for comparison.
+    /// Extracts a specific Python file from DLLs to a temporary location for comparison.
+    /// This searches all DLLs for the matching Python file based on relative path.
     /// </summary>
-    private static string? ExtractEmbeddedFileForComparison(string resourceName, string version, string relativePath)
+    private static string? ExtractPythonFileFromDllsForComparison(string installationPath, string relativePath, string version)
     {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceNames = assembly.GetManifestResourceNames();
-
-        // Find a matching resource (case-insensitive)
-        string? matchingResource = resourceNames.FirstOrDefault(r =>
-            r.Equals(resourceName, StringComparison.OrdinalIgnoreCase));
-
-        if (matchingResource is null)
+        try
         {
-            // File doesn't exist in the version - return null
+            // Get filename and subfolder structure from relative path
+            // Example: "Base\Core\Drivers\Safety\Button\Functions\Monitor.py"
+            //   → fileName: "Monitor.py"
+            //   → directory: "Base\Core\Drivers\Safety\Button"
+            //   → subfolder: "Functions"
+            string fileName = Path.GetFileName(relativePath);
+            string? directory = Path.GetDirectoryName(relativePath);
+
+            // Get all DLL files from subfolders (excluding root)
+            var dllFiles = Directory.GetFiles(installationPath, "*.dll", SearchOption.AllDirectories)
+                .Where(dll => !Path.GetDirectoryName(dll)!.Equals(installationPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var dllPath in dllFiles)
+            {
+                try
+                {
+                    // Check if DLL is in a compatible directory
+                    string dllDirectory = Path.GetDirectoryName(dllPath)!;
+                    string relativeDllPath = Path.GetRelativePath(installationPath, dllDirectory);
+
+                    // The Python file's directory should start with the DLL's directory
+                    // Example: Python in "Base\Core\Drivers\Safety\Button\Functions"
+                    //          DLL in "Base\Core\Drivers\Safety\Button"
+                    if (directory is not null && !directory.StartsWith(relativeDllPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // Load assembly in isolated context to allow unloading
+                    var loadContext = new AssemblyLoadContext(name: null, isCollectible: true);
+                    try
+                    {
+                        var assembly = loadContext.LoadFromAssemblyPath(dllPath);
+                        var resourceNames = assembly.GetManifestResourceNames();
+                        string assemblyNamespace = assembly.GetName().Name ?? string.Empty;
+
+                    // Find matching resource by reconstructing the expected resource name
+                    string? matchingResource = resourceNames.FirstOrDefault(resName =>
+                    {
+                        if (!resName.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+                            return false;
+
+                        // Extract filename from resource
+                        var parts = resName.Split('.');
+                        if (parts.Length < 2)
+                            return false;
+
+                        string resourceFileName = parts[^2] + ".py";
+                        if (!resourceFileName.Equals(fileName, StringComparison.OrdinalIgnoreCase))
+                            return false;
+
+                        // Extract subfolder structure from resource
+                        string resourcePath = resName;
+                        if (!string.IsNullOrEmpty(assemblyNamespace) && 
+                            resourcePath.StartsWith(assemblyNamespace + ".", StringComparison.OrdinalIgnoreCase))
+                        {
+                            resourcePath = resourcePath.Substring(assemblyNamespace.Length + 1);
+                        }
+
+                        var pathParts = resourcePath.Split('.');
+                        string resourceSubfolder = string.Empty;
+                        if (pathParts.Length > 2)
+                        {
+                            var folderParts = pathParts.Take(pathParts.Length - 2);
+                            resourceSubfolder = Path.Combine(folderParts.ToArray());
+                        }
+
+                        // Compare the subfolder structure
+                        // Example: relativePath = "Base\Core\Drivers\Safety\Button\Functions\Monitor.py"
+                        //          relativeDllPath = "Base\Core\Drivers\Safety\Button"
+                        //          expectedSubfolder = "Functions"
+                        if (directory is not null && directory.Length > relativeDllPath.Length)
+                        {
+                            string expectedSubfolder = directory.Substring(relativeDllPath.Length).TrimStart('\\', '/');
+                            return resourceSubfolder.Equals(expectedSubfolder, StringComparison.OrdinalIgnoreCase);
+                        }
+                        else
+                        {
+                            // File is directly in the DLL's folder (no subfolder)
+                            return string.IsNullOrEmpty(resourceSubfolder);
+                        }
+                    });
+
+                    if (matchingResource is not null)
+                    {
+                        // Extract to temp location maintaining the relative path
+                        string tempDir = Path.Combine(Path.GetTempPath(), "PMXClean_Compare", "locked_file_compare", version);
+                        string tempFilePath = Path.Combine(tempDir, relativePath);
+
+                        string? tempFileDir = Path.GetDirectoryName(tempFilePath);
+                        if (tempFileDir is not null && !Directory.Exists(tempFileDir))
+                        {
+                            Directory.CreateDirectory(tempFileDir);
+                        }
+
+                        using var stream = assembly.GetManifestResourceStream(matchingResource);
+                        if (stream is not null)
+                        {
+                            using var fileStream = File.Create(tempFilePath);
+                            stream.CopyTo(fileStream);
+                            Debug.WriteLine($"Extracted for comparison: {relativePath} from {Path.GetFileName(dllPath)}");
+                            return tempFilePath;
+                        }
+                    }
+                    }
+                    finally
+                    {
+                        // Unload the assembly to prevent locking
+                        loadContext.Unload();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error searching DLL {Path.GetFileName(dllPath)}: {ex.Message}");
+                }
+            }
+
+            // File not found in any DLL
+            Debug.WriteLine($"Python file not found in any DLL: {relativePath}");
             return null;
         }
-
-        // Create temp file path
-        string tempDir = Path.Combine(Path.GetTempPath(), "PMXClean_Compare", "locked_file_compare", version);
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(tempDir, relativePath))!);
-        string tempFilePath = Path.Combine(tempDir, relativePath);
-
-        // Extract the resource
-        using var stream = assembly.GetManifestResourceStream(matchingResource);
-        if (stream is null)
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Error extracting Python file for comparison: {ex.Message}");
             return null;
         }
-
-        using var fileStream = File.Create(tempFilePath);
-        stream.CopyTo(fileStream);
-
-        return tempFilePath;
     }
 
     /// <summary>
